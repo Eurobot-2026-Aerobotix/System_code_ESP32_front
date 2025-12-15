@@ -1,6 +1,10 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
-
+#include <micro_ros_platformio.h>
+#include <rcl/rcl.h>
+#include <rclc/rclc.h>
+#include <rclc/executor.h>
+#include <std_msgs/msg/int32.h>
 
 #define FAST_READ(pin) ((pin)<32 ? ((GPIO.in >> (pin)) & 0x1) : ((GPIO.in1.val >> ((pin)-32)) & 0x1))
 #define SGN(a) ((a<0)?-1:1)
@@ -29,6 +33,23 @@ int right_servo_pos_0 = 1000;
 int right_servo_pos_1 = 2000;
 
 int minPWM[4] = {80, 80, 80, 80};
+
+// micro-ROS variables
+rcl_subscription_t n20_subscriber;
+rcl_subscription_t kabech_subscriber;
+rcl_subscription_t dawer_subscriber;
+rclc_executor_t executor;
+rclc_support_t support;
+rcl_allocator_t allocator;
+rcl_node_t node;
+std_msgs__msg__Int32 n20_msg;
+std_msgs__msg__Int32 kabech_msg;
+std_msgs__msg__Int32 dawer_msg;
+
+// Function declarations
+void n20_callback(const void *msgin);
+void kabech_callback(const void *msgin);
+void dawer_callback(const void *msgin);
 
 volatile long encoderCount[4] = {0, 0, 0, 0};
 
@@ -159,8 +180,29 @@ void khabbi_l_kabecha(){
     right_servo.write(right_servo_pos_0);
 }
 
+// Callback function for /forward/n20 topic
+void n20_callback(const void *msgin) {
+    const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
+    int value = msg->data;
+
+}
+
+// Callback function for /forward/kabech topic
+void kabech_callback(const void *msgin) {
+    const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
+    int value = msg->data;
+}
+
+// Callback function for /forward/dawer topic
+void dawer_callback(const void *msgin) {
+    const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
+    int value = msg->data;
+}
+
 void setup(){
     Serial.begin(115200);
+    Serial.println("Starting ESP32 Front Control Node...");
+    set_microros_serial_transports(Serial);
 
     for(int i=0; i<4; i++){
         pinMode(encoderPinsA[i], INPUT_PULLUP);
@@ -183,30 +225,99 @@ void setup(){
 
     delay(2000);
     setupServos();
+    
+    // Initialize micro-ROS with error checking and retry
+    Serial.println("Waiting for micro-ROS agent...");
+    delay(3000);
+    
+    allocator = rcl_get_default_allocator();
+    
+    // Retry connection up to 10 times
+    rcl_ret_t ret;
+    int retry_count = 0;
+    do {
+        ret = rclc_support_init(&support, 0, NULL, &allocator);
+        if (ret != RCL_RET_OK) {
+            Serial.println("Failed to connect to micro-ROS agent, retrying...");
+            delay(1000);
+            retry_count++;
+        }
+    } while (ret != RCL_RET_OK && retry_count < 10);
+    
+    if (ret != RCL_RET_OK) {
+        Serial.println("ERROR: Failed to initialize micro-ROS!");
+        while(1) { delay(100); }
+    }
+    Serial.println("✓ Support initialized");
+    
+    ret = rclc_node_init_default(&node, "esp32_front_node", "", &support);
+    if (ret != RCL_RET_OK) {
+        Serial.println("ERROR: Failed to init node!");
+        while(1) { delay(100); }
+    }
+    Serial.println("✓ Node created");
+
+    // Create subscriptions
+    ret = rclc_subscription_init_default(
+        &n20_subscriber,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+        "/forward/n20");
+    if (ret != RCL_RET_OK) {
+        Serial.println("ERROR: Failed to create n20 subscription!");
+    } else {
+        Serial.println("✓ N20 subscription created");
+    }
+
+    ret = rclc_subscription_init_default(
+        &kabech_subscriber,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+        "/forward/kabech");
+    if (ret != RCL_RET_OK) {
+        Serial.println("ERROR: Failed to create kabech subscription!");
+    } else {
+        Serial.println("✓ Kabech subscription created");
+    }
+
+    ret = rclc_subscription_init_default(
+        &dawer_subscriber,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+        "/forward/dawer");
+    if (ret != RCL_RET_OK) {
+        Serial.println("ERROR: Failed to create dawer subscription!");
+    } else {
+        Serial.println("✓ Dawer subscription created");
+    }
+
+    // Create executor
+    ret = rclc_executor_init(&executor, &support.context, 3, &allocator);
+    if (ret != RCL_RET_OK) {
+        Serial.println("ERROR: Failed to init executor!");
+    } else {
+        Serial.println("✓ Executor initialized");
+    };
+    rclc_executor_add_subscription(&executor, &n20_subscriber, &n20_msg,
+                                    &n20_callback, ON_NEW_DATA);
+    rclc_executor_add_subscription(&executor, &kabech_subscriber, &kabech_msg,
+                                    &kabech_callback, ON_NEW_DATA);
+    rclc_executor_add_subscription(&executor, &dawer_subscriber, &dawer_msg,
+                                    &dawer_callback, ON_NEW_DATA);
+    
+    Serial.println("✓✓✓ ESP32 Front Node Ready! ✓✓✓");
     last_time = millis()-10;
 }
 void loop(){
     unsigned long currentTime = millis();
     float dt = (currentTime - last_time) / 1000.0;
     last_time = currentTime;
+    
+    // Spin micro-ROS executor
+    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
+    
     for (int i=0; i<4; i++){
         applyPositionPID(dt, i);
-    }
-    if (Serial.available() > 0) {
-        String command = Serial.readStringUntil('\n');
-        if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
-            for(int i=0; i<4; i++){
-                if (command[i] == 'u'){
-                    target_encoder_count[i] = upPosition[i];
-                }else if (command[i] == 'm'){
-                    target_encoder_count[i] = midPosition[i];
-                }else if (command[i] == 'd'){
-                    target_encoder_count[i] = downPosition[i];
-                }
-            }
-        }else{
-            target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
-        }
     }
     delay(10);
 }
