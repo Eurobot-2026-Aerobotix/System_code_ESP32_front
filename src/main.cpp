@@ -23,14 +23,14 @@ const int right_servo_pin = 17;
 Servo middle_servo;
 Servo left_servo;
 Servo right_servo;
-int middle_servo_pos_0 = 1000;
-int middle_servo_pos_1 = 2000;
+int middle_servo_pos_0 = 0;
+int middle_servo_pos_1 = 180;
 
-int left_servo_pos_0 = 1000;
-int left_servo_pos_1 = 2000;
+int left_servo_pos_0 = 180;
+int left_servo_pos_1 = 0;
 
-int right_servo_pos_0 = 1000;
-int right_servo_pos_1 = 2000;
+int right_servo_pos_0 = 0;
+int right_servo_pos_1 = 20;
 
 int minPWM[4] = {80, 80, 80, 80};
 
@@ -63,6 +63,7 @@ float last_error[4] = {0, 0, 0, 0};
 long target_encoder_count[4] = {0, 0, 0, 0};
 
 long downPosition[4] = {0, 0, 0, 0};
+long preparePosition[4] = {-1500, 2500, 2500, 2500};
 long midPosition[4] = {-3000, 5000, 5000, 5000};
 long upPosition[4] = {-8480, 10000, 10000, 10000};
 
@@ -118,13 +119,13 @@ void send_values(float s, float ts, long pos, long tgt){
 
 void setupServos(){
     middle_servo.setPeriodHertz(50);
-    middle_servo.attach(middle_servo_pin, 500, 2500);
+    middle_servo.attach(middle_servo_pin);
     middle_servo.write(middle_servo_pos_0);
     left_servo.setPeriodHertz(50);
-    left_servo.attach(left_servo_pin, 500, 2500);
+    left_servo.attach(left_servo_pin);
     left_servo.write(left_servo_pos_0);
     right_servo.setPeriodHertz(50);
-    right_servo.attach(right_servo_pin, 500, 2500);
+    right_servo.attach(right_servo_pin);
     right_servo.write(right_servo_pos_0);
 }
 
@@ -307,6 +308,23 @@ void setup(){
     
     Serial.println("✓✓✓ ESP32 Front Node Ready! ✓✓✓");
     last_time = millis()-10;
+}
+void apply_command(String command){
+    if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd' || command[0] == 'p'){
+        for(int i=0; i<4; i++){
+            if (command[i] == 'u'){
+                target_encoder_count[i] = upPosition[i];
+            }else if (command[i] == 'm'){
+                target_encoder_count[i] = midPosition[i];
+            }else if (command[i] == 'd'){
+                target_encoder_count[i] = downPosition[i];
+            }else if (command[i] == 'p'){
+                target_encoder_count[i] = preparePosition[i];
+            }
+        }
+    }else{
+        target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
+    }
 }
 void loop(){
     unsigned long currentTime = millis();
