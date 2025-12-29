@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
-#include <micro_ros_platformio.h>
+#include <micro_ros_arduino.h>
 #include <rcl/rcl.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
@@ -202,8 +202,8 @@ void dawer_callback(const void *msgin) {
 
 void setup(){
     Serial.begin(115200);
-    Serial.println("Starting ESP32 Front Control Node...");
-    set_microros_serial_transports(Serial);
+    Serial.println("Starting ESP32 back Control Node...");
+    set_microros_transports();
 
     for(int i=0; i<4; i++){
         pinMode(encoderPinsA[i], INPUT_PULLUP);
@@ -263,7 +263,7 @@ void setup(){
         &n20_subscriber,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
-        "/forward/n20");
+        "/front/n20");
     if (ret != RCL_RET_OK) {
         Serial.println("ERROR: Failed to create n20 subscription!");
     } else {
@@ -274,7 +274,7 @@ void setup(){
         &kabech_subscriber,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
-        "/forward/kabech");
+        "/front/kabech");
     if (ret != RCL_RET_OK) {
         Serial.println("ERROR: Failed to create kabech subscription!");
     } else {
@@ -285,7 +285,7 @@ void setup(){
         &dawer_subscriber,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
-        "/forward/dawer");
+        "/front/dawer");
     if (ret != RCL_RET_OK) {
         Serial.println("ERROR: Failed to create dawer subscription!");
     } else {
@@ -306,7 +306,7 @@ void setup(){
     rclc_executor_add_subscription(&executor, &dawer_subscriber, &dawer_msg,
                                     &dawer_callback, ON_NEW_DATA);
     
-    Serial.println("✓✓✓ ESP32 Front Node Ready! ✓✓✓");
+    Serial.println("✓✓✓ ESP32 Back Node Ready! ✓✓✓");
     last_time = millis()-10;
 }
 void apply_command(String command){
