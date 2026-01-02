@@ -9,13 +9,13 @@
 #define FAST_READ(pin) ((pin)<32 ? ((GPIO.in >> (pin)) & 0x1) : ((GPIO.in1.val >> ((pin)-32)) & 0x1))
 #define SGN(a) ((a<0)?-1:1)
 
-int motorPinsA[4] = {2, 4, 5, 15};
-int motorPinsB[4] = {19, 14, 23, 16};
-int motorPinsEnable[4] = {18, 12, 21, 22};
-// motors are ordered from left to right when looking from above and the ESP32's USB port is facing downwards
+int motorPinsA[4] = {15, 5, 4, 2};
+int motorPinsB[4] = {16, 23, 14, 19};
+int motorPinsEnable[4] = {22, 21, 12, 18};
+// motors are ordered from right to left when looking from above and the ESP32's USB port is facing downwards
 
-int encoderPinsA[4] = {36, 35, 25, 27};
-int encoderPinsB[4] = {39, 34, 32, 26};
+int encoderPinsB[4] = {26, 32, 34, 39};
+int encoderPinsA[4] = {27, 25, 35, 36};
 
 const int middle_servo_pin = 17;
 const int left_servo_pin = 13;
@@ -24,14 +24,14 @@ const int right_servo_pin = 33;
 Servo middle_servo;
 Servo left_servo;
 Servo right_servo;
-int middle_servo_pos_0 = 0;
-int middle_servo_pos_1 = 180;
+int middle_servo_pos_0 = 50;
+int middle_servo_pos_1 = 145;
 
-int left_servo_pos_0 = 180;
-int left_servo_pos_1 = 0;
+int left_servo_pos_0 = 2;
+int left_servo_pos_1 = 145;
 
-int right_servo_pos_0 = 0;
-int right_servo_pos_1 = 20;
+int right_servo_pos_0 = 171;
+int right_servo_pos_1 = 27;
 
 int minPWM[4] = {80, 80, 80, 80};
 
@@ -54,9 +54,9 @@ void dawer_callback(const void *msgin);
 
 volatile long encoderCount[4] = {0, 0, 0, 0};
 
-float kp[4] = {0.8, 0.8, 0.8, 0.8};
+float kp[4] = {0.8, 1.4, 1.4, 1.4};
 float ki[4] = {5, 5, 5, 5};
-float kd[4] = {0.05, 0.05, 0.05, 0.05};
+float kd[4] = {0.05, 0.1, 0.1, 0.1};
 
 float integral[4] = {0, 0, 0, 0};
 float last_error[4] = {0, 0, 0, 0};
@@ -64,9 +64,9 @@ float last_error[4] = {0, 0, 0, 0};
 long target_encoder_count[4] = {0, 0, 0, 0};
 
 long downPosition[4] = {0, 0, 0, 0};
-long preparePosition[4] = {-1500, 2500, 2500, 2500};
-long midPosition[4] = {-3000, 5000, 5000, 5000};
-long upPosition[4] = {-8480, 10000, 10000, 10000};
+long preparePosition[4] = {-6000, -6050, -6000, -6120};
+long midPosition[4] = {-6000, -6050, -6000, -6120};
+long upPosition[4] = {-8250, -8260, -8000, -8200};
 
 unsigned long last_time = 0;
 
@@ -144,9 +144,9 @@ void setMotor(int pwm, int motorIndex){
         digitalWrite(motorPinsA[motorIndex], 0);
         digitalWrite(motorPinsB[motorIndex], 1);
     }else{
-        digitalWrite(motorPinsEnable[motorIndex], 255);
-        digitalWrite(motorPinsA[motorIndex], 1);
-        digitalWrite(motorPinsB[motorIndex], 1);
+        digitalWrite(motorPinsEnable[motorIndex], 1);
+        digitalWrite(motorPinsA[motorIndex], 0);
+        digitalWrite(motorPinsB[motorIndex], 0);
     }
 }
 
@@ -200,7 +200,46 @@ void dawer_callback(const void *msgin) {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
     int value = msg->data;
 }
-
+void find_home(){
+    for(int i=0; i<4; i++){
+        setMotor(-255, i);
+    }
+    int motors_at_home = 0;
+    int saved_encoder_counts[4] = {encoderCount[0], encoderCount[1], encoderCount[2], encoderCount[3]};
+    bool motor_homed[4] = {false, false, false, false};
+    delay(500);
+    while(motors_at_home < 4){
+        delay(200);
+        for(int i=0; i<4; i++){
+            if (!motor_homed[i] && abs(encoderCount[i] - saved_encoder_counts[i]) == 0){
+                motors_at_home++;
+                motor_homed[i] = true;
+                setMotor(0, i);
+                encoderCount[i] = upPosition[i];
+                Serial.println("Motor " + String(i) + " homed.");
+            }else{
+                saved_encoder_counts[i] = encoderCount[i];
+            }
+        }
+    }
+}
+void apply_command(String command){
+    if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd' || command[0] == 'p'){
+        for(int i=0; i<4; i++){
+            if (command[i] == 'u'){
+                target_encoder_count[i] = upPosition[i];
+            }else if (command[i] == 'm'){
+                target_encoder_count[i] = midPosition[i];
+            }else if (command[i] == 'd'){
+                target_encoder_count[i] = downPosition[i];
+            }else if (command[i] == 'p'){
+                target_encoder_count[i] = preparePosition[i];
+            }
+        }
+    }else{
+        target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
+    }
+}
 void setup(){
     Serial.begin(115200);
     Serial.println("Starting ESP32 back Control Node...");
@@ -227,6 +266,7 @@ void setup(){
 
     delay(2000);
     setupServos();
+    /*
     // Initialize micro-ROS with error checking and retry
     Serial.println("Waiting for micro-ROS agent...");
     delay(3000);
@@ -307,35 +347,55 @@ void setup(){
                                     &dawer_callback, ON_NEW_DATA);
     
     Serial.println("✓✓✓ ESP32 Back Node Ready! ✓✓✓");
+    */
     last_time = millis()-10;
-}
-void apply_command(String command){
-    if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd' || command[0] == 'p'){
-        for(int i=0; i<4; i++){
-            if (command[i] == 'u'){
-                target_encoder_count[i] = upPosition[i];
-            }else if (command[i] == 'm'){
-                target_encoder_count[i] = midPosition[i];
-            }else if (command[i] == 'd'){
-                target_encoder_count[i] = downPosition[i];
-            }else if (command[i] == 'p'){
-                target_encoder_count[i] = preparePosition[i];
-            }
-        }
-    }else{
-        target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
+    // target_encoder_count[0] = -6000;
+    // target_encoder_count[1] = -6050;
+    // target_encoder_count[2] = -6000;
+    // target_encoder_count[3] = -6120;
+    Serial.println("tryna home");
+    find_home();
+    Serial.println("Homing complete.");
+    for(int i=0; i<4; i++){
+        setMotor(0, i);
     }
+    apply_command("mmmm");
 }
+
 void loop(){
     unsigned long currentTime = millis();
     float dt = (currentTime - last_time) / 1000.0;
     last_time = currentTime;
     
     //Spin micro-ROS executor
-    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
+    //rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
     
     for (int i=0; i<4; i++){
         applyPositionPID(dt, i);
     }
     delay(10);
+    if (Serial.available() > 0) {
+        String command = Serial.readStringUntil('\n');
+        if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
+            for(int i=0; i<4; i++){
+                if (command[i] == 'u'){
+                    target_encoder_count[i] = upPosition[i];
+                }else if (command[i] == 'm'){
+                    target_encoder_count[i] = midPosition[i];
+                }else if (command[i] == 'd'){
+                    target_encoder_count[i] = downPosition[i];
+                }
+            }
+        }else if (command[0] == 'k'){
+            estwi_l_crates();
+        }else if (command[0] == 'l'){
+            khabbi_l_kabecha();
+        }else if (command[0] == 'b'){
+            ba33ed_3la_ba3dhou();
+        }else if (command[0] == 's'){
+            lemm_l_ba3dhou();
+        }else{
+            target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
+        }
+    }
 }
