@@ -54,19 +54,21 @@ void dawer_callback(const void *msgin);
 
 volatile long encoderCount[4] = {0, 0, 0, 0};
 
-float kp[4] = {0.8, 1.4, 1.4, 1.4};
-float ki[4] = {5, 5, 5, 5};
-float kd[4] = {0.05, 0.1, 0.1, 0.1};
+float kp[4] = {0.8, 3, 1.5, 3};
+float ki[4] = {5, 5, 3, 1.5};
+float kd[4] = {0.05, 0.1, 0.01, 0.05};
 
 float integral[4] = {0, 0, 0, 0};
 float last_error[4] = {0, 0, 0, 0};
 
 long target_encoder_count[4] = {0, 0, 0, 0};
 
-long downPosition[4] = {0, 0, 0, 0};
-long preparePosition[4] = {-6000, -6050, -6000, -6120};
-long midPosition[4] = {-6000, -6050, -6000, -6120};
-long upPosition[4] = {-8250, -8260, -8000, -8200};
+long upPosition[4] = {0, 0, 0, 0};
+long midPosition[4] = {2250, 2210, 2000, 2080};
+long downPosition[4] = {8250, 8260, 8000, 8200};
+bool motor_homing[4] = {false, false, false, false};
+int motor_homing_time[4] = {0, 0, 0, 0};
+int saved_encoder_count[4] = {0, 0, 0, 0};
 
 unsigned long last_time = 0;
 
@@ -151,17 +153,36 @@ void setMotor(int pwm, int motorIndex){
 }
 
 void applyPositionPID(float dt, int motorIndex){
-    float error = target_encoder_count[motorIndex] - encoderCount[motorIndex];
-    integral[motorIndex] += error * dt;
-    if(SGN(last_error[motorIndex]) != SGN(error)){
-      integral[motorIndex] = 0;
-    }
-    integral[motorIndex] = constrain(integral[motorIndex], -500.0f, 500.0f);
-    float derivative = (error - last_error[motorIndex]) / dt;
-    float speedCmd = kp[motorIndex] * error + ki[motorIndex] * integral[motorIndex] + kd[motorIndex] * derivative;
+    if(target_encoder_count[motorIndex] != upPosition[motorIndex] ){
+        float error = target_encoder_count[motorIndex] - encoderCount[motorIndex];
+        integral[motorIndex] += error * dt;
+        if(SGN(last_error[motorIndex]) != SGN(error)){
+        integral[motorIndex] = 0;
+        }
+        integral[motorIndex] = constrain(integral[motorIndex], -500.0f, 500.0f);
+        float derivative = (error - last_error[motorIndex]) / dt;
+        float speedCmd = kp[motorIndex] * error + ki[motorIndex] * integral[motorIndex] + kd[motorIndex] * derivative;
 
-    last_error[motorIndex] = error;
-    setMotor((int)speedCmd, motorIndex);
+        last_error[motorIndex] = error;
+        setMotor((int)speedCmd, motorIndex);
+    }else{
+        if (!motor_homing[motorIndex]){
+            setMotor(-255, motorIndex);
+            motor_homing[motorIndex] = true;
+            saved_encoder_count[motorIndex] = encoderCount[motorIndex];
+            motor_homing_time[motorIndex] = millis();
+        }else if (millis() - motor_homing_time[motorIndex] > 100){
+            if (abs(encoderCount[motorIndex] - saved_encoder_count[motorIndex]) == 0){
+                motor_homing[motorIndex] = false;
+                setMotor(0, motorIndex);
+                encoderCount[motorIndex] = upPosition[motorIndex];
+                target_encoder_count[motorIndex] = upPosition[motorIndex] + 10;
+            }else{
+                saved_encoder_count[motorIndex] = encoderCount[motorIndex];
+            }
+            motor_homing_time[motorIndex] = millis();
+        }
+    }
 }
 
 void ba33ed_3la_ba3dhou(){
@@ -223,6 +244,16 @@ void find_home(){
         }
     }
 }
+bool is_idle(){
+    bool idle = true;
+    for(int i=0; i<4; i++){
+        if (abs(target_encoder_count[i] - encoderCount[i]) > 35){
+            idle = false;
+            break;
+        }
+    }
+    return idle;
+}
 void apply_command(String command){
     if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd' || command[0] == 'p'){
         for(int i=0; i<4; i++){
@@ -232,8 +263,6 @@ void apply_command(String command){
                 target_encoder_count[i] = midPosition[i];
             }else if (command[i] == 'd'){
                 target_encoder_count[i] = downPosition[i];
-            }else if (command[i] == 'p'){
-                target_encoder_count[i] = preparePosition[i];
             }
         }
     }else{
