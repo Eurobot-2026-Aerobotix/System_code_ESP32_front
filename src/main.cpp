@@ -5,6 +5,7 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <std_msgs/msg/int32.h>
+#include <std_srvs/srv/trigger.h>
 
 #define FAST_READ(pin) ((pin)<32 ? ((GPIO.in >> (pin)) & 0x1) : ((GPIO.in1.val >> ((pin)-32)) & 0x1))
 #define SGN(a) ((a<0)?-1:1)
@@ -35,10 +36,14 @@ int right_servo_pos_1 = 27;
 
 int minPWM[4] = {80, 80, 80, 80};
 
+// Global variable for isIDLE service
+bool isIDLE = true;
+
 // micro-ROS variables
 rcl_subscription_t n20_subscriber;
 rcl_subscription_t kabech_subscriber;
 rcl_subscription_t dawer_subscriber;
+rcl_service_t idle_service;
 rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
@@ -46,11 +51,14 @@ rcl_node_t node;
 std_msgs__msg__Int32 n20_msg;
 std_msgs__msg__Int32 kabech_msg;
 std_msgs__msg__Int32 dawer_msg;
+std_srvs__srv__Trigger_Request idle_req;
+std_srvs__srv__Trigger_Response idle_res;
 
 // Function declarations
 void n20_callback(const void *msgin);
 void kabech_callback(const void *msgin);
 void dawer_callback(const void *msgin);
+void idle_service_callback(const void *req, void *res);
 
 volatile long encoderCount[4] = {0, 0, 0, 0};
 
@@ -269,6 +277,24 @@ void apply_command(String command){
         target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
     }
 }
+
+// Service callback for /front/isIDLE service
+void idle_service_callback(const void *req, void *res) {
+    std_srvs__srv__Trigger_Response *response = (std_srvs__srv__Trigger_Response *)res;
+    
+    // Return the isIDLE status
+    response->success = isIDLE;
+    
+    // Set response message
+    if (isIDLE) {
+        strcpy(response->message.data, "System is IDLE");
+    } else {
+        strcpy(response->message.data, "System is BUSY");
+    }
+    response->message.size = strlen(response->message.data);
+    response->message.capacity = response->message.size + 1;
+}
+
 void setup(){
     Serial.begin(115200);
     Serial.println("Starting ESP32 back Control Node...");
@@ -361,8 +387,20 @@ void setup(){
         Serial.println("✓ Dawer subscription created");
     }
 
-    // Create executor
-    ret = rclc_executor_init(&executor, &support.context, 3, &allocator);
+    // Create isIDLE service
+    ret = rclc_service_init_default(
+        &idle_service,
+        &node,
+        ROSIDL_GET_SRV_TYPE_SUPPORT(std_srvs, srv, Trigger),
+        "/front/isIDLE");
+    if (ret != RCL_RET_OK) {
+        Serial.println("ERROR: Failed to create isIDLE service!");
+    } else {
+        Serial.println("✓ isIDLE service created");
+    }
+
+    // Create executor (4 handles: 3 subscriptions + 1 service)
+    ret = rclc_executor_init(&executor, &support.context, 4, &allocator);
     if (ret != RCL_RET_OK) {
         Serial.println("ERROR: Failed to init executor!");
     } else {
@@ -374,6 +412,8 @@ void setup(){
                                     &kabech_callback, ON_NEW_DATA);
     rclc_executor_add_subscription(&executor, &dawer_subscriber, &dawer_msg,
                                     &dawer_callback, ON_NEW_DATA);
+    rclc_executor_add_service(&executor, &idle_service, &idle_req, &idle_res,
+                              &idle_service_callback);
     
     Serial.println("✓✓✓ ESP32 Back Node Ready! ✓✓✓");
     */
