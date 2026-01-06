@@ -78,6 +78,9 @@ bool motor_homing[4] = {false, false, false, false};
 int motor_homing_time[4] = {0, 0, 0, 0};
 int saved_encoder_count[4] = {0, 0, 0, 0};
 
+bool going_down = false;
+int before_going_up_encoder_count[4] = {0, 0, 0, 0};
+
 unsigned long last_time = 0;
 
 void IRAM_ATTR encoderA_ISR_0(){ 
@@ -215,19 +218,44 @@ void khabbi_l_kabecha(){
 void n20_callback(const void *msgin) {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
     int value = msg->data;
-
+    String command = "dddd";
+    going_down = true;
+    if (value <16){
+        going_down = false;
+        for (int i=0; i<4; i++){
+            before_going_up_encoder_count[i] = encoderCount[i];
+        }
+        for(int i=0; i<4; i++){
+            if (value & (1 << (3 - i))){
+                command[i] = 'u';
+            }else{
+                command[i] = 'm';
+            }
+        }
+    }
+    apply_command(command);
 }
 
 // Callback function for /forward/kabech topic
 void kabech_callback(const void *msgin) {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
     int value = msg->data;
+    if (value == 1){
+        estwi_l_crates();
+    }else{
+        khabbi_l_kabecha();
+    }
 }
 
 // Callback function for /forward/dawer topic
 void dawer_callback(const void *msgin) {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
     int value = msg->data;
+    if (value == 1){
+        ba33ed_3la_ba3dhou();
+    }else{
+        lemm_l_ba3dhou();
+    }
 }
 void find_home(){
     for(int i=0; i<4; i++){
@@ -262,8 +290,18 @@ bool is_idle(){
     }
     return idle;
 }
+bool cleared_ground(){
+    bool clear = true;
+    for(int i=0; i<4; i++){
+        if (abs(encoderCount[i] - before_going_up_encoder_count[i]) < 2000){
+            clear = false;
+            break;
+        }
+    }
+    return clear;
+}
 void apply_command(String command){
-    if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd' || command[0] == 'p'){
+    if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
         for(int i=0; i<4; i++){
             if (command[i] == 'u'){
                 target_encoder_count[i] = upPosition[i];
@@ -286,13 +324,40 @@ void idle_service_callback(const void *req, void *res) {
     response->success = isIDLE;
     
     // Set response message
-    if (isIDLE) {
+    if ( ( going_down && is_idle() ) || (!going_down && cleared_ground())) {
         strcpy(response->message.data, "System is IDLE");
     } else {
         strcpy(response->message.data, "System is BUSY");
     }
     response->message.size = strlen(response->message.data);
     response->message.capacity = response->message.size + 1;
+}
+
+void test_with_serial(){
+    if (Serial.available() > 0) {
+        String command = Serial.readStringUntil('\n');
+        if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
+            for(int i=0; i<4; i++){
+                if (command[i] == 'u'){
+                    target_encoder_count[i] = upPosition[i];
+                }else if (command[i] == 'm'){
+                    target_encoder_count[i] = midPosition[i];
+                }else if (command[i] == 'd'){
+                    target_encoder_count[i] = downPosition[i];
+                }
+            }
+        }else if (command[0] == 'k'){
+            estwi_l_crates();
+        }else if (command[0] == 'l'){
+            khabbi_l_kabecha();
+        }else if (command[0] == 'b'){
+            ba33ed_3la_ba3dhou();
+        }else if (command[0] == 's'){
+            lemm_l_ba3dhou();
+        }else{
+            target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
+        }
+    }
 }
 
 void setup(){
@@ -321,7 +386,6 @@ void setup(){
 
     delay(2000);
     setupServos();
-    /*
     // Initialize micro-ROS with error checking and retry
     Serial.println("Waiting for micro-ROS agent...");
     delay(3000);
@@ -415,13 +479,8 @@ void setup(){
     rclc_executor_add_service(&executor, &idle_service, &idle_req, &idle_res,
                               &idle_service_callback);
     
-    Serial.println("✓✓✓ ESP32 Back Node Ready! ✓✓✓");
-    */
+    Serial.println("✓✓✓ ESP32 Front Node Ready! ✓✓✓");
     last_time = millis()-10;
-    // target_encoder_count[0] = -6000;
-    // target_encoder_count[1] = -6050;
-    // target_encoder_count[2] = -6000;
-    // target_encoder_count[3] = -6120;
     Serial.println("tryna home");
     find_home();
     Serial.println("Homing complete.");
@@ -437,34 +496,10 @@ void loop(){
     last_time = currentTime;
     
     //Spin micro-ROS executor
-    //rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
+    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
     
     for (int i=0; i<4; i++){
         applyPositionPID(dt, i);
     }
     delay(10);
-    if (Serial.available() > 0) {
-        String command = Serial.readStringUntil('\n');
-        if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
-            for(int i=0; i<4; i++){
-                if (command[i] == 'u'){
-                    target_encoder_count[i] = upPosition[i];
-                }else if (command[i] == 'm'){
-                    target_encoder_count[i] = midPosition[i];
-                }else if (command[i] == 'd'){
-                    target_encoder_count[i] = downPosition[i];
-                }
-            }
-        }else if (command[0] == 'k'){
-            estwi_l_crates();
-        }else if (command[0] == 'l'){
-            khabbi_l_kabecha();
-        }else if (command[0] == 'b'){
-            ba33ed_3la_ba3dhou();
-        }else if (command[0] == 's'){
-            lemm_l_ba3dhou();
-        }else{
-            target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
-        }
-    }
 }
