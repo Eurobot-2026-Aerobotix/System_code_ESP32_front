@@ -95,8 +95,8 @@ float last_error[4] = {0, 0, 0, 0};
 long target_encoder_count[4] = {0, 0, 0, 0};
 
 long upPosition[4] = {0, 0, 0, 0};
-long midPosition[4] = {2250, 2210, 2000, 2080};
-long downPosition[4] = {8250, 8260, 8000, 8200};
+long midPosition[4] = {2250, 2100, 2000, 2080};
+long downPosition[4] = {8500, 8100, 8500, 8200};
 bool motor_homing[4] = {false, false, false, false};
 int motor_homing_time[4] = {0, 0, 0, 0};
 int saved_encoder_count[4] = {0, 0, 0, 0};
@@ -609,7 +609,6 @@ void pidControlTask(void *parameter) {
         for (int i = 0; i < 4; i++) {
             applyPositionPID(dt, i);
         }
-        
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -708,5 +707,4 @@ void loop(){
     // Empty loop - all work is done by FreeRTOS tasks
     // The loop() function is still called but doesn't need to do anything
     vTaskDelay(pdMS_TO_TICKS(1000)); // Yield to FreeRTOS scheduler
-    //test_with_serial();
 }
