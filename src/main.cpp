@@ -377,6 +377,29 @@ void test_with_serial(){
             ba33ed_3la_ba3dhou();
         }else if (command[0] == 's'){
             lemm_l_ba3dhou();
+        }else if (command[0] == 'c') {
+            // format: c<servo_id><angle>
+            // example: c190  -> left servo to 90°
+            //          c245  -> middle servo to 45°
+            //          c3120 -> right servo to 120°
+
+            int servo_id = command[1] - 1;   // '1'->0, '2'->1, '3'->2
+
+            if (servo_id >= 0 && servo_id < 3) {
+                int angle = command.substring(2).toInt();
+
+                // OPTION 1: using array
+                if (servo_id == 1){
+                    left_servo.write(angle);
+                }else if (servo_id == 2){
+                    middle_servo.write(angle);
+                }else{
+                    right_servo.write(angle);
+                }
+
+                // OPTION 2: using function
+                // setServoAngle(servo_id, angle);
+            }
         }else{
             target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
         }
@@ -609,6 +632,7 @@ void pidControlTask(void *parameter) {
         for (int i = 0; i < 4; i++) {
             applyPositionPID(dt, i);
         }
+        test_with_serial();
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -670,7 +694,7 @@ void setup(){
     // ========================================================================
     // Create FreeRTOS Tasks
     // ========================================================================
-    
+    /*
     // Create micro-ROS task on Core 0 (higher priority)
     xTaskCreatePinnedToCore(
         microROSTask,           // Task function
@@ -681,7 +705,7 @@ void setup(){
         &microROSTaskHandle,    // Task handle
         0                       // Core ID (0 or 1)
     );
-    
+    */
     // Create PID control task on Core 1 (medium priority)
     xTaskCreatePinnedToCore(
         pidControlTask,         // Task function
@@ -706,5 +730,6 @@ void setup(){
 void loop(){
     // Empty loop - all work is done by FreeRTOS tasks
     // The loop() function is still called but doesn't need to do anything
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Yield to FreeRTOS scheduler
+    //vTaskDelay(pdMS_TO_TICKS(1000)); // Yield to FreeRTOS scheduler
+    test_with_serial();
 }
