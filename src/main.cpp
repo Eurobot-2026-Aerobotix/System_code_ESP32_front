@@ -586,7 +586,7 @@ void microROSTask(void *parameter) {
                 
             case AGENT_CONNECTED:
                 // Spin executor to process messages
-                rcl_ret_t ret = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(1));
+                rcl_ret_t ret = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
                 
                 // Periodic ping to check agent health
                 if (millis() - last_ping_time > PING_INTERVAL) {
@@ -632,7 +632,7 @@ void pidControlTask(void *parameter) {
         for (int i = 0; i < 4; i++) {
             applyPositionPID(dt, i);
         }
-        test_with_serial();
+        //test_with_serial();
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -694,7 +694,7 @@ void setup(){
     // ========================================================================
     // Create FreeRTOS Tasks
     // ========================================================================
-    /*
+    
     // Create micro-ROS task on Core 0 (higher priority)
     xTaskCreatePinnedToCore(
         microROSTask,           // Task function
@@ -705,7 +705,7 @@ void setup(){
         &microROSTaskHandle,    // Task handle
         0                       // Core ID (0 or 1)
     );
-    */
+    
     // Create PID control task on Core 1 (medium priority)
     xTaskCreatePinnedToCore(
         pidControlTask,         // Task function
@@ -730,6 +730,6 @@ void setup(){
 void loop(){
     // Empty loop - all work is done by FreeRTOS tasks
     // The loop() function is still called but doesn't need to do anything
-    //vTaskDelay(pdMS_TO_TICKS(1000)); // Yield to FreeRTOS scheduler
-    test_with_serial();
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Yield to FreeRTOS scheduler
+    //test_with_serial();
 }
