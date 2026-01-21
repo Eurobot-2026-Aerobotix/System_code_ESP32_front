@@ -61,6 +61,8 @@ int minPWM[4] = {80, 80, 80, 80};
 
 // Global variable for isIDLE service
 bool isIDLE = true;
+bool setup_completed = false;
+bool homed = false;
 
 // micro-ROS variables
 rcl_subscription_t n20_subscriber;
@@ -152,6 +154,18 @@ void send_values(float s, float ts, long pos, long tgt){
     Serial.write((uint8_t)0xAB); Serial.write((uint8_t*)&ts, sizeof(ts));
     Serial.write((uint8_t)0xAC); Serial.write((uint8_t*)&pos, sizeof(pos));
     Serial.write((uint8_t)0xAD); Serial.write((uint8_t*)&tgt, sizeof(tgt));
+}
+
+void custom_delay(int ms){
+    if (setup_completed){
+        unsigned long start_time = millis();
+        while (millis() - start_time < ms)
+        {
+            vTaskDelay(1);
+        }
+    }else{
+        delay(ms);
+    }
 }
 
 void setupServos(){
@@ -255,6 +269,11 @@ void apply_command(String command){
 void n20_callback(const void *msgin) {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
     int value = msg->data;
+    if (!value){
+        find_home();
+        apply_command("mmmm");
+        return;
+    }
     // 1 means down, 2 means middle, and 3 means up, ordered from MSB to LSB
     String command = "";
     going_down = false;
@@ -296,15 +315,16 @@ void dawer_callback(const void *msgin) {
 }
 
 void find_home(){
+    homed = false;
     for(int i=0; i<4; i++){
         setMotor(-255, i);
     }
     int motors_at_home = 0;
     int saved_encoder_counts[4] = {encoderCount[0], encoderCount[1], encoderCount[2], encoderCount[3]};
     bool motor_homed[4] = {false, false, false, false};
-    delay(500);
+    custom_delay(500);
     while(motors_at_home < 4){
-        delay(200);
+        custom_delay(200);
         for(int i=0; i<4; i++){
             if (!motor_homed[i] && abs(encoderCount[i] - saved_encoder_counts[i]) == 0){
                 motors_at_home++;
@@ -317,6 +337,7 @@ void find_home(){
             }
         }
     }
+    homed = true;
 }
 
 bool is_idle(int tolerance=50){
@@ -334,7 +355,7 @@ void idle_service_callback(const void *req, void *res) {
     std_srvs__srv__Trigger_Response *response = (std_srvs__srv__Trigger_Response *)res;
     
     // Check if system is idle
-    bool system_idle = (( going_down && is_idle() ) || (!going_down && is_idle(2000)));
+    bool system_idle = homed && (( going_down && is_idle() ) || (!going_down && is_idle(2000)));
     
     // Set response success field
     response->success = system_idle;
@@ -702,14 +723,11 @@ void setup(){
     delay(2000);
     setupServos();
 
-    //microros_setup();
+    microros_setup();
     
     Serial.println("tryna home");
     find_home();
     Serial.println("Homing complete.");
-    for(int i=0; i<4; i++){
-        setMotor(0, i);
-    }
     apply_command("mmmm");
     
     // ========================================================================
@@ -747,6 +765,7 @@ void setup(){
     Serial.println("✓ micro-ROS task on Core 0 (Priority 2)");
     Serial.println("✓ PID Control task on Core 1 (Priority 1)");
     Serial.println("=== System ready ===");
+    setup_completed = true;
 }
 void loop(){
     // Empty loop - all work is done by FreeRTOS tasks
