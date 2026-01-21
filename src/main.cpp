@@ -265,6 +265,33 @@ void apply_command(String command){
         target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
     }
 }
+
+void find_home(){
+    homed = false;
+    for(int i=0; i<4; i++){
+        setMotor(-255, i);
+    }
+    int motors_at_home = 0;
+    int saved_encoder_counts[4] = {encoderCount[0], encoderCount[1], encoderCount[2], encoderCount[3]};
+    bool motor_homed[4] = {false, false, false, false};
+    custom_delay(500);
+    while(motors_at_home < 4){
+        custom_delay(200);
+        for(int i=0; i<4; i++){
+            if (!motor_homed[i] && abs(encoderCount[i] - saved_encoder_counts[i]) == 0){
+                motors_at_home++;
+                motor_homed[i] = true;
+                setMotor(0, i);
+                encoderCount[i] = upPosition[i];
+                Serial.println("Motor " + String(i) + " homed.");
+            }else{
+                saved_encoder_counts[i] = encoderCount[i];
+            }
+        }
+    }
+    homed = true;
+}
+
 // Callback function for /forward/n20 topic
 void n20_callback(const void *msgin) {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
@@ -312,32 +339,6 @@ void dawer_callback(const void *msgin) {
     }else{
         lemm_l_ba3dhou();
     }
-}
-
-void find_home(){
-    homed = false;
-    for(int i=0; i<4; i++){
-        setMotor(-255, i);
-    }
-    int motors_at_home = 0;
-    int saved_encoder_counts[4] = {encoderCount[0], encoderCount[1], encoderCount[2], encoderCount[3]};
-    bool motor_homed[4] = {false, false, false, false};
-    custom_delay(500);
-    while(motors_at_home < 4){
-        custom_delay(200);
-        for(int i=0; i<4; i++){
-            if (!motor_homed[i] && abs(encoderCount[i] - saved_encoder_counts[i]) == 0){
-                motors_at_home++;
-                motor_homed[i] = true;
-                setMotor(0, i);
-                encoderCount[i] = upPosition[i];
-                Serial.println("Motor " + String(i) + " homed.");
-            }else{
-                saved_encoder_counts[i] = encoderCount[i];
-            }
-        }
-    }
-    homed = true;
 }
 
 bool is_idle(int tolerance=50){
