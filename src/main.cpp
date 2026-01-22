@@ -673,8 +673,10 @@ void pidControlTask(void *parameter) {
         last_time = currentTime;
         
         // Apply PID control for all 4 motors
-        for (int i = 0; i < 4; i++) {
-            applyPositionPID(dt, i);
+        if (homed){
+            for (int i = 0; i < 4; i++) {
+                applyPositionPID(dt, i);
+            }
         }
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
