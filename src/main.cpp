@@ -356,7 +356,7 @@ void idle_service_callback(const void *req, void *res) {
     std_srvs__srv__Trigger_Response *response = (std_srvs__srv__Trigger_Response *)res;
     
     // Check if system is idle
-    bool system_idle = homed && (( going_down && is_idle() ) || (!going_down && is_idle(2000)));
+    bool system_idle = homed && (( going_down && is_idle() ) || (!going_down && is_idle(7000)));
     
     // Set response success field
     response->success = system_idle;
