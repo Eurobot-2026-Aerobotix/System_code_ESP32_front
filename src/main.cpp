@@ -51,11 +51,11 @@ Servo right_servo;
 int middle_servo_pos_0 = 50;
 int middle_servo_pos_1 = 150;
 
-int left_servo_pos_0 = 15;
-int left_servo_pos_1 = 153;
+int left_servo_pos_0 = 16;
+int left_servo_pos_1 = 150;
 
-int right_servo_pos_0 = 158;
-int right_servo_pos_1 = 20;
+int right_servo_pos_0 = 156;
+int right_servo_pos_1 = 24;
 
 int minPWM[4] = {80, 80, 80, 80};
 
@@ -401,9 +401,9 @@ void test_with_serial(){
             lemm_l_ba3dhou();
         }else if (command[0] == 'c') {
             // format: c<servo_id><angle>
-            // example: c190  -> left servo to 90°
-            //          c245  -> middle servo to 45°
-            //          c3120 -> right servo to 120°
+           // example: c130  -> right servo to 90°
+            //          c260  -> left servo to 45°
+            //          c3120 -> middle servo to 120°
 
             int servo_id = command[1] - '1';   // '1'->0, '2'->1, '3'->2
 
@@ -678,6 +678,7 @@ void pidControlTask(void *parameter) {
                 applyPositionPID(dt, i);
             }
         }
+    //    test_with_serial();
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -737,7 +738,7 @@ void setup(){
     // Create FreeRTOS Tasks
     // ========================================================================
     
-    // Create micro-ROS task on Core 0 (higher priority)
+   // Create micro-ROS task on Core 0 (higher priority)
     xTaskCreatePinnedToCore(
         microROSTask,           // Task function
         "microROSTask",         // Task name
