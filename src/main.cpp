@@ -87,7 +87,7 @@ void idle_service_callback(const void *req, void *res);
 
 volatile long encoderCount[4] = {0, 0, 0, 0};
 
-float kp[4] = {0.8, 3, 1.5, 3};
+float kp[4] = {3, 3, 1.5, 3};
 float ki[4] = {5, 5, 3, 1.5};
 float kd[4] = {0.05, 0.1, 0.01, 0.05};
 
@@ -98,6 +98,7 @@ long target_encoder_count[4] = {0, 0, 0, 0};
 
 long upPosition[4] = {0, 0, 0, 0};
 long midPosition[4] = {2250, 2100, 2000, 2080};
+long preparePosition[4] = {7250, 6700, 7000, 7080};
 long downPosition[4] = {8500, 8100, 8500, 8200};
 bool motor_homing[4] = {false, false, false, false};
 int motor_homing_time[4] = {0, 0, 0, 0};
@@ -251,12 +252,14 @@ void khabbi_l_kabecha(){
     right_servo.write(right_servo_pos_0);
 }
 void apply_command(String command){
-    if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
+    if (command[0] == 'p' || command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
         for(int i=0; i<4; i++){
             if (command[i] == 'u'){
                 target_encoder_count[i] = upPosition[i];
             }else if (command[i] == 'm'){
                 target_encoder_count[i] = midPosition[i];
+            }else if (command[i] == 'p'){
+                target_encoder_count[i] = preparePosition[i];
             }else if (command[i] == 'd'){
                 target_encoder_count[i] = downPosition[i];
             }
@@ -310,6 +313,8 @@ void n20_callback(const void *msgin) {
             command = 'd' + command; // down
             going_down = true;
         }else if (bit == 2){
+            command = 'p' + command; // prepare
+        }else if (bit == 3){
             command = 'm' + command; // middle
         }else{
             command = 'u' + command; // up
@@ -381,12 +386,14 @@ void idle_service_callback(const void *req, void *res) {
 void test_with_serial(){
     if (Serial.available() > 0) {
         String command = Serial.readStringUntil('\n');
-        if (command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
+        if (command[0] == 'p' || command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
             for(int i=0; i<4; i++){
                 if (command[i] == 'u'){
                     target_encoder_count[i] = upPosition[i];
                 }else if (command[i] == 'm'){
                     target_encoder_count[i] = midPosition[i];
+                }else if (command[i] == 'p'){
+                    target_encoder_count[i] = preparePosition[i];
                 }else if (command[i] == 'd'){
                     target_encoder_count[i] = downPosition[i];
                 }
@@ -678,7 +685,7 @@ void pidControlTask(void *parameter) {
                 applyPositionPID(dt, i);
             }
         }
-    //    test_with_serial();
+        //test_with_serial();
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
