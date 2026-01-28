@@ -5,6 +5,7 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <std_msgs/msg/int32.h>
+#include <std_msgs/msg/string.h>
 #include <std_srvs/srv/trigger.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -68,6 +69,7 @@ bool homed = false;
 rcl_subscription_t n20_subscriber;
 rcl_subscription_t kabech_subscriber;
 rcl_subscription_t dawer_subscriber;
+rcl_publisher_t command_publisher;
 rcl_service_t idle_service;
 rclc_executor_t executor;
 rclc_support_t support;
@@ -76,6 +78,7 @@ rcl_node_t node;
 std_msgs__msg__Int32 n20_msg;
 std_msgs__msg__Int32 kabech_msg;
 std_msgs__msg__Int32 dawer_msg;
+std_msgs__msg__String command_msg;
 std_srvs__srv__Trigger_Request idle_req;
 std_srvs__srv__Trigger_Response idle_res;
 
@@ -95,6 +98,7 @@ float integral[4] = {0, 0, 0, 0};
 float last_error[4] = {0, 0, 0, 0};
 
 long target_encoder_count[4] = {0, 0, 0, 0};
+int pwm_output[4] = {0, 0, 0, 0};
 
 long upPosition[4] = {0, 0, 0, 0};
 long midPosition[4] = {2250, 2100, 2000, 2080};
@@ -103,11 +107,13 @@ long downPosition[4] = {8500, 8100, 8500, 8200};
 bool motor_homing[4] = {false, false, false, false};
 int motor_homing_time[4] = {0, 0, 0, 0};
 int saved_encoder_count[4] = {0, 0, 0, 0};
+int first_saved_encoder_count[4] = {0, 0, 0, 0};
 
 bool going_down = false;
 int before_going_up_encoder_count[4] = {0, 0, 0, 0};
 
 unsigned long last_time = 0;
+
 
 void IRAM_ATTR encoderA_ISR_0(){ 
     bool A = FAST_READ(encoderPinsA[0]);
@@ -157,18 +163,6 @@ void send_values(float s, float ts, long pos, long tgt){
     Serial.write((uint8_t)0xAD); Serial.write((uint8_t*)&tgt, sizeof(tgt));
 }
 
-void custom_delay(int ms){
-    if (setup_completed){
-        unsigned long start_time = millis();
-        while (millis() - start_time < ms)
-        {
-            vTaskDelay(1);
-        }
-    }else{
-        delay(ms);
-    }
-}
-
 void setupServos(){
     middle_servo.setPeriodHertz(50);
     middle_servo.attach(middle_servo_pin);
@@ -181,7 +175,8 @@ void setupServos(){
     right_servo.write(right_servo_pos_0);
 }
 
-void setMotor(int pwm, int motorIndex){  
+void setMotor(int pwm, int motorIndex){
+    pwm_output[motorIndex] = pwm;
     if(abs(pwm)<minPWM[motorIndex]){
     pwm = 0;
     }
@@ -219,8 +214,9 @@ void applyPositionPID(float dt, int motorIndex){
             setMotor(-255, motorIndex);
             motor_homing[motorIndex] = true;
             saved_encoder_count[motorIndex] = encoderCount[motorIndex];
+            first_saved_encoder_count[motorIndex] = encoderCount[motorIndex];
             motor_homing_time[motorIndex] = millis();
-        }else if (millis() - motor_homing_time[motorIndex] > 200){
+        }else if (millis() - motor_homing_time[motorIndex] > 350 && (encoderCount[motorIndex] < first_saved_encoder_count[motorIndex]/2) ){
             if (abs(encoderCount[motorIndex] - saved_encoder_count[motorIndex]) == 0){
                 motor_homing[motorIndex] = false;
                 setMotor(0, motorIndex);
@@ -252,6 +248,7 @@ void khabbi_l_kabecha(){
     right_servo.write(right_servo_pos_0);
 }
 void apply_command(String command){
+    xSemaphoreTake(targetMutex, portMAX_DELAY);
     if (command[0] == 'p' || command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
         for(int i=0; i<4; i++){
             if (command[i] == 'u'){
@@ -267,8 +264,8 @@ void apply_command(String command){
     }else{
         target_encoder_count[(int)command[0]-48] = command.substring(1).toInt();
     }
+    xSemaphoreGive(targetMutex);
 }
-
 void find_home(){
     homed = false;
     for(int i=0; i<4; i++){
@@ -277,9 +274,9 @@ void find_home(){
     int motors_at_home = 0;
     int saved_encoder_counts[4] = {encoderCount[0], encoderCount[1], encoderCount[2], encoderCount[3]};
     bool motor_homed[4] = {false, false, false, false};
-    custom_delay(500);
+    delay(500);
     while(motors_at_home < 4){
-        custom_delay(200);
+        delay(350);
         for(int i=0; i<4; i++){
             if (!motor_homed[i] && abs(encoderCount[i] - saved_encoder_counts[i]) == 0){
                 motors_at_home++;
@@ -322,6 +319,44 @@ void n20_callback(const void *msgin) {
         value /= 10;
     }
     apply_command(command);
+
+    String s = "new command :" + command;
+    
+    command_msg.data.data = (char*)malloc(s.length() + 1);
+    strcpy(command_msg.data.data, s.c_str());
+    command_msg.data.size = s.length();
+    command_msg.data.capacity = s.length() + 1;
+    
+    // Publish the command string
+    rcl_publish(&command_publisher, &command_msg, NULL);
+    
+    // Free allocated memory
+    free(command_msg.data.data);
+    command_msg.data.data = NULL;
+    for(int i=0; i<20; i++){
+        String s =
+            String(pwm_output[0]) + " " +
+            String(pwm_output[1]) + " " +
+            String(pwm_output[2]) + " " +
+            String(pwm_output[3]) + " counts:" +
+            String(encoderCount[0]) + " " +
+            String(encoderCount[1]) + " " +
+            String(encoderCount[2]) + " " +
+            String(encoderCount[3]);;
+        
+        command_msg.data.data = (char*)malloc(s.length() + 1);
+        strcpy(command_msg.data.data, s.c_str());
+        command_msg.data.size = s.length();
+        command_msg.data.capacity = s.length() + 1;
+        
+        // Publish the command string
+        rcl_publish(&command_publisher, &command_msg, NULL);
+        
+        // Free allocated memory
+        free(command_msg.data.data);
+        command_msg.data.data = NULL;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
 
 // Callback function for /forward/kabech topic
@@ -356,7 +391,7 @@ bool is_idle(int tolerance=50){
     }
     return idle;
 }
-// Service callback for /front/isIDLE service
+// Service callback for /back/isIDLE service
 void idle_service_callback(const void *req, void *res) {
     std_srvs__srv__Trigger_Response *response = (std_srvs__srv__Trigger_Response *)res;
     
@@ -408,9 +443,10 @@ void test_with_serial(){
             lemm_l_ba3dhou();
         }else if (command[0] == 'c') {
             // format: c<servo_id><angle>
-           // example: c130  -> right servo to 90°
+            // example: // example: c130  -> right servo to 90°
             //          c260  -> left servo to 45°
             //          c3120 -> middle servo to 120°
+            // Note: The servo IDs are relative to the face you are testing from, not according to the right and left of the robot itself
 
             int servo_id = command[1] - '1';   // '1'->0, '2'->1, '3'->2
 
@@ -458,6 +494,9 @@ void cleanupMicroROS() {
     
     // Clean up service
     rcl_service_fini(&idle_service, &node);
+    
+    // Clean up publisher
+    rcl_publisher_fini(&command_publisher, &node);
     
     // Clean up subscriptions
     rcl_subscription_fini(&n20_subscriber, &node);
@@ -542,6 +581,29 @@ bool initializeMicroROS() {
         return false;
     }
     Serial.println("✓ Dawer subscription created");
+
+    // Create publisher with reliable QoS
+    rcl_publisher_options_t pub_opts = rcl_publisher_get_default_options();
+    pub_opts.qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
+    pub_opts.qos.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
+    pub_opts.qos.depth = 1;
+
+    ret = rclc_publisher_init(
+        &command_publisher,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
+        "/back/command",
+        &pub_opts.qos);
+    if (ret != RCL_RET_OK) {
+        Serial.println("✗ Failed to create command publisher");
+        rcl_subscription_fini(&n20_subscriber, &node);
+        rcl_subscription_fini(&kabech_subscriber, &node);
+        rcl_subscription_fini(&dawer_subscriber, &node);
+        rcl_node_fini(&node);
+        rclc_support_fini(&support);
+        return false;
+    }
+    Serial.println("✓ Command publisher created");
 
     // Create service options with reliable QoS
     rcl_service_options_t svc_opts = rcl_service_get_default_options();
@@ -663,7 +725,6 @@ void microROSTask(void *parameter) {
     }
 }
 
-
 // ============================================================================
 // FreeRTOS Task: PID Control Loop
 // ============================================================================
@@ -681,18 +742,20 @@ void pidControlTask(void *parameter) {
         
         // Apply PID control for all 4 motors
         if (homed){
+            xSemaphoreTake(targetMutex, portMAX_DELAY);
             for (int i = 0; i < 4; i++) {
                 applyPositionPID(dt, i);
             }
+            xSemaphoreGive(targetMutex);
         }
-        //test_with_serial();
+         //test_with_serial();
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
 
 void microros_setup(){
-    Serial.println("Starting ESP32 front Control Node...");
+    Serial.println("Starting ESP32 back Control Node...");
     
     // Create FreeRTOS mutexes for shared resource protection
     encoderMutex = xSemaphoreCreateMutex();
@@ -745,7 +808,7 @@ void setup(){
     // Create FreeRTOS Tasks
     // ========================================================================
     
-   // Create micro-ROS task on Core 0 (higher priority)
+    // Create micro-ROS task on Core 0 (higher priority)
     xTaskCreatePinnedToCore(
         microROSTask,           // Task function
         "microROSTask",         // Task name
@@ -753,7 +816,7 @@ void setup(){
         NULL,                   // Parameters
         2,                      // Priority (0-24, higher number = higher priority)
         &microROSTaskHandle,    // Task handle
-        0                       // Core ID (0 or 1)
+        1                       // Core ID (0 or 1)
     );
     
     // Create PID control task on Core 1 (medium priority)
@@ -764,7 +827,7 @@ void setup(){
         NULL,                   // Parameters
         1,                      // Priority
         &pidControlTaskHandle,  // Task handle
-        1                       // Core ID (0 or 1)
+        0                       // Core ID (0 or 1)
     );
     
     if (microROSTaskHandle == NULL || pidControlTaskHandle == NULL) {
