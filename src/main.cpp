@@ -248,6 +248,9 @@ void khabbi_l_kabecha(){
     right_servo.write(right_servo_pos_0);
 }
 void apply_command(String command){
+    for(int i=0; i<4; i++){
+        motor_homing[i] = false;
+    }
     xSemaphoreTake(targetMutex, portMAX_DELAY);
     if (command[0] == 'p' || command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
         for(int i=0; i<4; i++){
