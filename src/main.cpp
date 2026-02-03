@@ -55,8 +55,8 @@ int middle_servo_pos_1 = 150;
 int left_servo_pos_0 = 16;
 int left_servo_pos_1 = 150;
 
-int right_servo_pos_0 = 156;
-int right_servo_pos_1 = 22;
+int right_servo_pos_0 = 155;
+int right_servo_pos_1 = 19;
 
 int minPWM[4] = {80, 80, 80, 80};
 
@@ -761,9 +761,7 @@ void microros_setup(){
     Serial.println("Starting ESP32 back Control Node...");
     
     // Create FreeRTOS mutexes for shared resource protection
-    encoderMutex = xSemaphoreCreateMutex();
-    targetMutex = xSemaphoreCreateMutex();
-    servoMutex = xSemaphoreCreateMutex();
+   
     
     if (encoderMutex == NULL || targetMutex == NULL || servoMutex == NULL) {
         Serial.println("ERROR: Failed to create mutexes!");
@@ -777,7 +775,9 @@ void microros_setup(){
 
 void setup(){
     Serial.begin(115200);
-
+ encoderMutex = xSemaphoreCreateMutex();
+    targetMutex = xSemaphoreCreateMutex();
+    servoMutex = xSemaphoreCreateMutex();
     for(int i=0; i<4; i++){
         pinMode(encoderPinsA[i], INPUT_PULLUP);
         pinMode(encoderPinsB[i], INPUT_PULLUP);
