@@ -49,8 +49,8 @@ const int right_servo_pin = 33;
 Servo middle_servo;
 Servo left_servo;
 Servo right_servo;
-int middle_servo_pos_0 = 50;
-int middle_servo_pos_1 = 150;
+int middle_servo_pos_0 = 40;
+int middle_servo_pos_1 = 152;
 
 int left_servo_pos_0 = 16;
 int left_servo_pos_1 = 150;
