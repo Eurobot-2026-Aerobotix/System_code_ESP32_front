@@ -52,7 +52,7 @@ Servo right_servo;
 int middle_servo_pos_0 = 40;
 int middle_servo_pos_1 = 152;
 
-int left_servo_pos_0 = 16;
+int left_servo_pos_0 = 14;
 int left_servo_pos_1 = 150;
 
 int right_servo_pos_0 = 155;
