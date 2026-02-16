@@ -34,13 +34,13 @@ SemaphoreHandle_t encoderMutex;
 SemaphoreHandle_t targetMutex;
 SemaphoreHandle_t servoMutex;
 
-int motorPinsA[4] = {15, 5, 4, 2};
-int motorPinsB[4] = {16, 23, 14, 19};
-int motorPinsEnable[4] = {22, 21, 12, 18};
+int motorPinsA[4] = {2, 4, 5, 15};
+int motorPinsB[4] = {19, 14, 23, 16};
+int motorPinsEnable[4] = {18, 12, 21, 22};
 // motors are ordered from right to left when looking from above and the ESP32's USB port is facing downwards
 
-int encoderPinsB[4] = {26, 32, 34, 39};
-int encoderPinsA[4] = {27, 25, 35, 36};
+int encoderPinsB[4] = {39, 34, 32, 26};
+int encoderPinsA[4] = {36 ,35 ,25 ,27};
 
 const int middle_servo_pin = 17;
 const int left_servo_pin = 13;
