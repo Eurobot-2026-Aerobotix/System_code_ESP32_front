@@ -269,7 +269,7 @@ void apply_command(String command){
     }
     xSemaphoreGive(targetMutex);
 }
-void find_home(){
+void find_home(int inside_task = 0){
     homed = false;
     for(int i=0; i<4; i++){
         setMotor(-255, i);
@@ -277,9 +277,17 @@ void find_home(){
     int motors_at_home = 0;
     int saved_encoder_counts[4] = {encoderCount[0], encoderCount[1], encoderCount[2], encoderCount[3]};
     bool motor_homed[4] = {false, false, false, false};
-    delay(500);
+    if (inside_task){
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }else{
+        delay(500);
+    }
     while(motors_at_home < 4){
-        delay(350);
+        if (inside_task){
+        vTaskDelay(pdMS_TO_TICKS(350));
+        }else{
+            delay(350);
+        }
         for(int i=0; i<4; i++){
             if (!motor_homed[i] && abs(encoderCount[i] - saved_encoder_counts[i]) == 0){
                 motors_at_home++;
@@ -300,7 +308,7 @@ void n20_callback(const void *msgin) {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
     int value = msg->data;
     if (!value){
-        find_home();
+        find_home(1);
         apply_command("mmmm");
         return;
     }
