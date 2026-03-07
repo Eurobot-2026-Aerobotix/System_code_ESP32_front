@@ -69,7 +69,7 @@ bool homed = false;
 rcl_subscription_t n20_subscriber;
 rcl_subscription_t kabech_subscriber;
 rcl_subscription_t dawer_subscriber;
-rcl_publisher_t command_publisher;
+rcl_publisher_t status_publisher;
 rcl_service_t idle_service;
 rclc_executor_t executor;
 rclc_support_t support;
@@ -78,7 +78,7 @@ rcl_node_t node;
 std_msgs__msg__Int32 n20_msg;
 std_msgs__msg__Int32 kabech_msg;
 std_msgs__msg__Int32 dawer_msg;
-std_msgs__msg__String command_msg;
+std_msgs__msg__Int32 status_msg;
 std_srvs__srv__Trigger_Request idle_req;
 std_srvs__srv__Trigger_Response idle_res;
 
@@ -304,6 +304,9 @@ void n20_callback(const void *msgin) {
         apply_command("mmmm");
         return;
     }
+    if(value ==20){
+        ESP.restart();
+        return;}
     // 1 means down, 2 means middle, and 3 means up, ordered from MSB to LSB
     String command = "";
     going_down = false;
@@ -322,44 +325,6 @@ void n20_callback(const void *msgin) {
         value /= 10;
     }
     apply_command(command);
-
-    String s = "new command :" + command;
-    
-    command_msg.data.data = (char*)malloc(s.length() + 1);
-    strcpy(command_msg.data.data, s.c_str());
-    command_msg.data.size = s.length();
-    command_msg.data.capacity = s.length() + 1;
-    
-    // Publish the command string
-    rcl_publish(&command_publisher, &command_msg, NULL);
-    
-    // Free allocated memory
-    free(command_msg.data.data);
-    command_msg.data.data = NULL;
-    for(int i=0; i<20; i++){
-        String s =
-            String(pwm_output[0]) + " " +
-            String(pwm_output[1]) + " " +
-            String(pwm_output[2]) + " " +
-            String(pwm_output[3]) + " counts:" +
-            String(encoderCount[0]) + " " +
-            String(encoderCount[1]) + " " +
-            String(encoderCount[2]) + " " +
-            String(encoderCount[3]);;
-        
-        command_msg.data.data = (char*)malloc(s.length() + 1);
-        strcpy(command_msg.data.data, s.c_str());
-        command_msg.data.size = s.length();
-        command_msg.data.capacity = s.length() + 1;
-        
-        // Publish the command string
-        rcl_publish(&command_publisher, &command_msg, NULL);
-        
-        // Free allocated memory
-        free(command_msg.data.data);
-        command_msg.data.data = NULL;
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
 }
 
 // Callback function for /forward/kabech topic
@@ -499,7 +464,7 @@ void cleanupMicroROS() {
     rcl_service_fini(&idle_service, &node);
     
     // Clean up publisher
-    rcl_publisher_fini(&command_publisher, &node);
+    rcl_publisher_fini(&status_publisher, &node);
     
     // Clean up subscriptions
     rcl_subscription_fini(&n20_subscriber, &node);
@@ -592,13 +557,13 @@ bool initializeMicroROS() {
     pub_opts.qos.depth = 1;
 
     ret = rclc_publisher_init(
-        &command_publisher,
+        &status_publisher,
         &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String),
-        "/back/command",
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+        "/front/status",
         &pub_opts.qos);
     if (ret != RCL_RET_OK) {
-        Serial.println("✗ Failed to create command publisher");
+        Serial.println("✗ Failed to create status publisher");
         rcl_subscription_fini(&n20_subscriber, &node);
         rcl_subscription_fini(&kabech_subscriber, &node);
         rcl_subscription_fini(&dawer_subscriber, &node);
@@ -606,7 +571,7 @@ bool initializeMicroROS() {
         rclc_support_fini(&support);
         return false;
     }
-    Serial.println("✓ Command publisher created");
+    Serial.println("✓ Status publisher created");
 
     // Create service options with reliable QoS
     rcl_service_options_t svc_opts = rcl_service_get_default_options();
@@ -666,7 +631,9 @@ void microROSTask(void *parameter) {
     Serial.println("micro-ROS Task started on Core: " + String(xPortGetCoreID()));
     
     unsigned long last_ping_time = 0;
+    unsigned long last_status_time = 0;
     const unsigned long PING_INTERVAL = 500; // Ping every 0.5 second
+    const unsigned long STATUS_INTERVAL = 1000; // Publish status every 1 second
     const unsigned long RECONNECT_DELAY = 500; // Wait 0.5 second before reconnect
     
     agent_status = AGENT_WAIT;
@@ -703,6 +670,13 @@ void microROSTask(void *parameter) {
             case AGENT_CONNECTED:
                 // Spin executor to process messages
                 rcl_ret_t ret = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20));
+                
+                // Publish status every 1 second
+                if (millis() - last_status_time > STATUS_INTERVAL) {
+                    status_msg.data = 1;
+                    rcl_publish(&status_publisher, &status_msg, NULL);
+                    last_status_time = millis();
+                }
                 
                 // Periodic ping to check agent health
                 if (millis() - last_ping_time > PING_INTERVAL) {
