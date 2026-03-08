@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
+#include "driver/pcnt.h"
 #include <micro_ros_arduino.h>
 #include <rcl/rcl.h>
 #include <rclc/rclc.h>
@@ -12,7 +13,6 @@
 #include <freertos/semphr.h>
 #include <rmw_microros/rmw_microros.h>
 
-#define FAST_READ(pin) ((pin)<32 ? ((GPIO.in >> (pin)) & 0x1) : ((GPIO.in1.val >> ((pin)-32)) & 0x1))
 #define SGN(a) ((a<0)?-1:1)
 
 // Agent status enum
@@ -88,7 +88,8 @@ void kabech_callback(const void *msgin);
 void dawer_callback(const void *msgin);
 void idle_service_callback(const void *req, void *res);
 
-volatile long encoderCount[4] = {0, 0, 0, 0};
+long encoderCount[4] = {0, 0, 0, 0};
+int32_t pcnt_offset[4] = {0, 0, 0, 0};
 
 float kp[4] = {3, 3, 1.5, 3};
 float ki[4] = {5, 5, 3, 1.5};
@@ -115,45 +116,69 @@ int before_going_up_encoder_count[4] = {0, 0, 0, 0};
 unsigned long last_time = 0;
 
 
-void IRAM_ATTR encoderA_ISR_0(){ 
-    bool A = FAST_READ(encoderPinsA[0]);
-    bool B = FAST_READ(encoderPinsB[0]);
-    encoderCount[0] += (A == B) ? +1 : -1;
+// Initialise PCNT units for X4 quadrature decoding on all 4 encoders.
+// Direction convention is identical to the former ISRs:
+//   encoderA_ISR: count += (A == B) ? +1 : -1   =>  CH0: hctrl=KEEP lctrl=REVERSE pos=INC neg=DEC
+//   encoderB_ISR: count += (A != B) ? +1 : -1   =>  CH1: hctrl=KEEP lctrl=REVERSE pos=DEC neg=INC
+void setupPCNT() {
+    for (int i = 0; i < 4; i++) {
+        pcnt_unit_t unit = (pcnt_unit_t)i;
+
+        // CH0: A = pulse, B = control
+        pcnt_config_t cfg0 = {};
+        cfg0.pulse_gpio_num = encoderPinsA[i];
+        cfg0.ctrl_gpio_num  = encoderPinsB[i];
+        cfg0.lctrl_mode     = PCNT_MODE_REVERSE; // B LOW  → reverse direction
+        cfg0.hctrl_mode     = PCNT_MODE_KEEP;    // B HIGH → normal direction
+        cfg0.pos_mode       = PCNT_COUNT_INC;    // A rising  → +1 (when B HIGH)
+        cfg0.neg_mode       = PCNT_COUNT_DEC;    // A falling → -1 (when B HIGH)
+        cfg0.counter_h_lim  = 32000;
+        cfg0.counter_l_lim  = -32000;
+        cfg0.unit           = unit;
+        cfg0.channel        = PCNT_CHANNEL_0;
+        pcnt_unit_config(&cfg0);
+
+        // CH1: B = pulse, A = control
+        pcnt_config_t cfg1 = {};
+        cfg1.pulse_gpio_num = encoderPinsB[i];
+        cfg1.ctrl_gpio_num  = encoderPinsA[i];
+        cfg1.lctrl_mode     = PCNT_MODE_REVERSE; // A LOW  → reverse direction
+        cfg1.hctrl_mode     = PCNT_MODE_KEEP;    // A HIGH → normal direction
+        cfg1.pos_mode       = PCNT_COUNT_DEC;    // B rising  → -1 (when A HIGH)
+        cfg1.neg_mode       = PCNT_COUNT_INC;    // B falling → +1 (when A HIGH)
+        cfg1.counter_h_lim  = 32000;
+        cfg1.counter_l_lim  = -32000;
+        cfg1.unit           = unit;
+        cfg1.channel        = PCNT_CHANNEL_1;
+        pcnt_unit_config(&cfg1);
+
+        // Glitch filter: 100 APB cycles ≈ 1.25 µs @ 80 MHz
+        pcnt_set_filter_value(unit, 100);
+        pcnt_filter_enable(unit);
+
+        pcnt_counter_pause(unit);
+        pcnt_counter_clear(unit);
+        pcnt_counter_resume(unit);
+    }
 }
-void IRAM_ATTR encoderB_ISR_0(){ 
-    bool A = FAST_READ(encoderPinsA[0]);
-    bool B = FAST_READ(encoderPinsB[0]);
-    encoderCount[0] += (A != B) ? +1 : -1;
+
+// Read all four PCNT counters and update encoderCount[].
+// Called from pidControlTask each cycle and from find_home.
+void readEncoderCounts() {
+    for (int i = 0; i < 4; i++) {
+        int16_t val;
+        pcnt_get_counter_value((pcnt_unit_t)i, &val);
+        encoderCount[i] = pcnt_offset[i] + (int32_t)val;
+    }
 }
-void IRAM_ATTR encoderA_ISR_1(){ 
-    bool A = FAST_READ(encoderPinsA[1]);
-    bool B = FAST_READ(encoderPinsB[1]);
-    encoderCount[1] += (A == B) ? +1 : -1;
-}
-void IRAM_ATTR encoderB_ISR_1(){ 
-    bool A = FAST_READ(encoderPinsA[1]);
-    bool B = FAST_READ(encoderPinsB[1]);
-    encoderCount[1] += (A != B) ? +1 : -1;
-}
-void IRAM_ATTR encoderA_ISR_2(){ 
-    bool A = FAST_READ(encoderPinsA[2]);
-    bool B = FAST_READ(encoderPinsB[2]);
-    encoderCount[2] += (A == B) ? +1 : -1;
-}
-void IRAM_ATTR encoderB_ISR_2(){ 
-    bool A = FAST_READ(encoderPinsA[2]);
-    bool B = FAST_READ(encoderPinsB[2]);
-    encoderCount[2] += (A != B) ? +1 : -1;
-}
-void IRAM_ATTR encoderA_ISR_3(){ 
-    bool A = FAST_READ(encoderPinsA[3]);
-    bool B = FAST_READ(encoderPinsB[3]);
-    encoderCount[3] += (A == B) ? +1 : -1;
-}
-void IRAM_ATTR encoderB_ISR_3(){ 
-    bool A = FAST_READ(encoderPinsA[3]);
-    bool B = FAST_READ(encoderPinsB[3]);
-    encoderCount[3] += (A != B) ? +1 : -1;
+
+// Reset a single encoder to upPosition (0): clears the PCNT counter and offset.
+void resetEncoder(int i) {
+    pcnt_counter_pause((pcnt_unit_t)i);
+    pcnt_counter_clear((pcnt_unit_t)i);
+    pcnt_offset[i] = upPosition[i];  // always 0
+    pcnt_counter_resume((pcnt_unit_t)i);
+    encoderCount[i] = upPosition[i];
 }
 
 void send_values(float s, float ts, long pos, long tgt){
@@ -220,7 +245,7 @@ void applyPositionPID(float dt, int motorIndex){
             if (abs(encoderCount[motorIndex] - saved_encoder_count[motorIndex]) == 0){
                 motor_homing[motorIndex] = false;
                 setMotor(0, motorIndex);
-                encoderCount[motorIndex] = upPosition[motorIndex];
+                resetEncoder(motorIndex);
                 target_encoder_count[motorIndex] = upPosition[motorIndex] + 40;
             }else{
                 saved_encoder_count[motorIndex] = encoderCount[motorIndex];
@@ -275,6 +300,7 @@ void find_home(int inside_task = 0){
         setMotor(-255, i);
     }
     int motors_at_home = 0;
+    readEncoderCounts();
     int saved_encoder_counts[4] = {encoderCount[0], encoderCount[1], encoderCount[2], encoderCount[3]};
     bool motor_homed[4] = {false, false, false, false};
     if (inside_task){
@@ -288,12 +314,13 @@ void find_home(int inside_task = 0){
         }else{
             delay(350);
         }
+        readEncoderCounts();
         for(int i=0; i<4; i++){
             if (!motor_homed[i] && abs(encoderCount[i] - saved_encoder_counts[i]) == 0){
                 motors_at_home++;
                 motor_homed[i] = true;
                 setMotor(0, i);
-                encoderCount[i] = upPosition[i];
+                resetEncoder(i);
                 Serial.println("Motor " + String(i) + " homed.");
             }else{
                 saved_encoder_counts[i] = encoderCount[i];
@@ -724,7 +751,10 @@ void pidControlTask(void *parameter) {
         unsigned long currentTime = millis();
         float dt = (currentTime - last_time) / 1000.0;
         last_time = currentTime;
-        
+
+        // Update encoder counts from PCNT hardware counters
+        readEncoderCounts();
+
         // Apply PID control for all 4 motors
         if (homed){
             xSemaphoreTake(targetMutex, portMAX_DELAY);
@@ -767,17 +797,7 @@ void setup(){
         pinMode(motorPinsB[i], OUTPUT);
     }
 
-    attachInterrupt(digitalPinToInterrupt(encoderPinsA[0]), encoderA_ISR_0, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(encoderPinsB[0]), encoderB_ISR_0, CHANGE);
-
-    attachInterrupt(digitalPinToInterrupt(encoderPinsA[1]), encoderA_ISR_1, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(encoderPinsB[1]), encoderB_ISR_1, CHANGE);
-
-    attachInterrupt(digitalPinToInterrupt(encoderPinsA[2]), encoderA_ISR_2, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(encoderPinsB[2]), encoderB_ISR_2, CHANGE);
-
-    attachInterrupt(digitalPinToInterrupt(encoderPinsA[3]), encoderA_ISR_3, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(encoderPinsB[3]), encoderB_ISR_3, CHANGE);
+    setupPCNT();
 
     delay(2000);
     setupServos();
