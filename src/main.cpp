@@ -114,6 +114,7 @@ bool going_down = false;
 int before_going_up_encoder_count[4] = {0, 0, 0, 0};
 
 unsigned long last_time = 0;
+int homing_waiting = 0;
 
 
 // Initialise PCNT units for X4 quadrature decoding on all 4 encoders.
@@ -152,8 +153,8 @@ void setupPCNT() {
         cfg1.channel        = PCNT_CHANNEL_1;
         pcnt_unit_config(&cfg1);
 
-        // Glitch filter: 100 APB cycles ≈ 1.25 µs @ 80 MHz
-        pcnt_set_filter_value(unit, 100);
+        // Glitch filter: 100 APB cycles ≈ 12.5 µs @ 80 MHz
+        pcnt_set_filter_value(unit, 1000);
         pcnt_filter_enable(unit);
 
         pcnt_counter_pause(unit);
@@ -335,8 +336,7 @@ void n20_callback(const void *msgin) {
     const std_msgs__msg__Int32 *msg = (const std_msgs__msg__Int32 *)msgin;
     int value = msg->data;
     if (!value){
-        find_home(1);
-        apply_command("mmmm");
+        homing_waiting = 1;
         return;
     }
     if(value ==20){
@@ -359,7 +359,9 @@ void n20_callback(const void *msgin) {
         }
         value /= 10;
     }
-    apply_command(command);
+    if (!homing_waiting){ 
+        apply_command(command);
+    }
 }
 
 // Callback function for /forward/kabech topic
@@ -739,9 +741,17 @@ void pidControlTask(void *parameter) {
     const TickType_t xFrequency = pdMS_TO_TICKS(10); // 100Hz PID update
     
     while (true) {
+
         unsigned long currentTime = millis();
-        float dt = (currentTime - last_time) / 1000.0f;
+        float dt = fabs(currentTime - last_time) / 1000.0f;
         last_time = currentTime;
+
+        if (homing_waiting){
+            homing_waiting = 0;
+            find_home(1);
+            apply_command("mmmm");
+            continue;
+        }
 
         if (dt <= 0.0f) {
             vTaskDelayUntil(&xLastWakeTime, xFrequency);
@@ -817,7 +827,7 @@ void setup(){
         NULL,                   // Parameters
         2,                      // Priority (0-24, higher number = higher priority)
         &microROSTaskHandle,    // Task handle
-        0                      // Core ID (0 or 1)
+        1                      // Core ID (0 or 1)
     );
     
     // Create PID control task on Core 1 (medium priority)
