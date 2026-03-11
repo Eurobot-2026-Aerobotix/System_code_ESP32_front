@@ -106,7 +106,7 @@ long midPosition[4] = {2250, 2100, 2000, 2080};
 long preparePosition[4] = {7250, 6900, 7100, 6700};
 long downPosition[4] = {8500, 8100, 8500, 8200};
 bool motor_homing[4] = {false, false, false, false};
-int motor_homing_time[4] = {0, 0, 0, 0};
+unsigned long motor_homing_time[4] = {0, 0, 0, 0};
 int saved_encoder_count[4] = {0, 0, 0, 0};
 int first_saved_encoder_count[4] = {0, 0, 0, 0};
 
@@ -273,10 +273,10 @@ void khabbi_l_kabecha(){
     right_servo.write(right_servo_pos_0);
 }
 void apply_command(String command){
+    xSemaphoreTake(targetMutex, portMAX_DELAY);
     for(int i=0; i<4; i++){
         motor_homing[i] = false;
     }
-    xSemaphoreTake(targetMutex, portMAX_DELAY);
     if (command[0] == 'p' || command[0] == 'u' || command[0] == 'm' || command[0] == 'd'){
         for(int i=0; i<4; i++){
             if (command[i] == 'u'){
@@ -404,21 +404,12 @@ void idle_service_callback(const void *req, void *res) {
     // Set response success field
     response->success = system_idle;
     
-    // Properly allocate and assign the response message using micro-ROS string utilities
-    const char* msg = system_idle ? "System is IDLE" : "System is BUSY";
-    
-    // Allocate memory for the string
-    response->message.data = (char*)malloc(strlen(msg) + 1);
-    if (response->message.data != NULL) {
-        strcpy(response->message.data, msg);
-        response->message.size = strlen(msg);
-        response->message.capacity = strlen(msg) + 1;
-    } else {
-        // Fallback if allocation fails
-        response->message.data = (char*)"";
-        response->message.size = 0;
-        response->message.capacity = 0;
-    }
+    static const char* idle_msg = "System is IDLE";
+    static const char* busy_msg = "System is BUSY";
+    const char* msg = system_idle ? idle_msg : busy_msg;
+    response->message.data = (char*)msg;
+    response->message.size = strlen(msg);
+    response->message.capacity = 0;
 }
 
 void test_with_serial(){
@@ -749,8 +740,13 @@ void pidControlTask(void *parameter) {
     
     while (true) {
         unsigned long currentTime = millis();
-        float dt = (currentTime - last_time) / 1000.0;
+        float dt = (currentTime - last_time) / 1000.0f;
         last_time = currentTime;
+
+        if (dt <= 0.0f) {
+            vTaskDelayUntil(&xLastWakeTime, xFrequency);
+            continue;
+        }
 
         // Update encoder counts from PCNT hardware counters
         readEncoderCounts();
