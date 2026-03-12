@@ -37,7 +37,7 @@ SemaphoreHandle_t servoMutex;
 int motorPinsA[4] = {2, 4, 5, 15};
 int motorPinsB[4] = {19, 14, 23, 16};
 int motorPinsEnable[4] = {18, 12, 21, 22};
-int motorPWMChannels[4] = {0, 1, 2, 3};
+int motorPWMChannels[4] = {2, 3, 4, 5};
 const int motorPWMFreq = 20000;
 const int motorPWMResolution = 8;
 // motors are ordered from right to left when looking from above and the ESP32's USB port is facing downwards
@@ -812,7 +812,7 @@ void setup(){
     }
 
     setupMotorPWM();
-    
+
     setupPCNT();
 
     delay(2000);
