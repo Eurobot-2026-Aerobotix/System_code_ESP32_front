@@ -530,7 +530,7 @@ bool initializeMicroROS() {
     rcl_subscription_options_t sub_opts = rcl_subscription_get_default_options();
     sub_opts.qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
     sub_opts.qos.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
-    sub_opts.qos.depth = 1;
+    sub_opts.qos.depth = 5;
 
     // Create subscriptions with reliable QoS
     ret = rclc_subscription_init(
@@ -582,7 +582,7 @@ bool initializeMicroROS() {
     rcl_publisher_options_t pub_opts = rcl_publisher_get_default_options();
     pub_opts.qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
     pub_opts.qos.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
-    pub_opts.qos.depth = 1;
+    pub_opts.qos.depth = 5;
 
     ret = rclc_publisher_init(
         &status_publisher,
@@ -605,7 +605,7 @@ bool initializeMicroROS() {
     rcl_service_options_t svc_opts = rcl_service_get_default_options();
     svc_opts.qos.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
     svc_opts.qos.history = RMW_QOS_POLICY_HISTORY_KEEP_LAST;
-    svc_opts.qos.depth = 1;
+    svc_opts.qos.depth = 5;
 
     // Create isIDLE service with reliable QoS
     ret = rclc_service_init(
@@ -697,7 +697,7 @@ void microROSTask(void *parameter) {
                 
             case AGENT_CONNECTED:
                 // Spin executor to process messages
-                rcl_ret_t ret = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20));
+                rcl_ret_t ret = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
                 
                 // Publish status every 1 second
                 if (millis() - last_status_time > STATUS_INTERVAL) {
@@ -719,13 +719,8 @@ void microROSTask(void *parameter) {
                     last_ping_time = millis();
                 }
                 
-                vTaskDelay(pdMS_TO_TICKS(20));
+                vTaskDelay(pdMS_TO_TICKS(5));
                 break;
-        }
-        
-        // Small delay for non-connected states is already handled in each case
-        if (agent_status == AGENT_CONNECTED) {
-            vTaskDelay(pdMS_TO_TICKS(20));
         }
     }
 }
