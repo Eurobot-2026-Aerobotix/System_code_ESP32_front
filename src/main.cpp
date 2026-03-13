@@ -116,6 +116,9 @@ int first_saved_encoder_count[4] = {0, 0, 0, 0};
 bool going_down = false;
 int before_going_up_encoder_count[4] = {0, 0, 0, 0};
 
+// Request restart from callbacks and perform it safely from microROSTask.
+volatile bool restart_requested = false;
+
 unsigned long last_time = 0;
 int homing_waiting = 0;
 
@@ -352,7 +355,7 @@ void n20_callback(const void *msgin) {
         return;
     }
     if(value ==20){
-        ESP.restart();
+        restart_requested = true;
         return;}
     // 1 means down, 2 means middle, and 3 means up, ordered from MSB to LSB
     String command = "";
@@ -708,6 +711,13 @@ void microROSTask(void *parameter) {
                 break;
                 
             case AGENT_CONNECTED:
+                if (restart_requested) {
+                    Serial.println("[STATUS] Restart requested, cleaning up micro-ROS...");
+                    cleanupMicroROS();
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    ESP.restart();
+                }
+
                 // Spin executor to process messages
                 rcl_ret_t ret = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
                 
