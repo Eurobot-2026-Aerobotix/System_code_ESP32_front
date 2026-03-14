@@ -120,7 +120,7 @@ int homing_waiting = 0;
 
 int current_command = 0;
 int command_waiting = 0;
-bool system_idle = true;
+bool system_idle = false;
 bool restart_requested = false;
 
 // Initialise PCNT units for X4 quadrature decoding on all 4 encoders.
