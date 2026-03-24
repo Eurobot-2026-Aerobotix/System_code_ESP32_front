@@ -111,6 +111,8 @@ bool motor_homing[4] = {false, false, false, false};
 unsigned long motor_homing_time[4] = {0, 0, 0, 0};
 int saved_encoder_count[4] = {0, 0, 0, 0};
 int first_saved_encoder_count[4] = {0, 0, 0, 0};
+int average_encoder_change[4] = {0, 0, 0, 0};
+int encoder_change_filter = 0.99;
 
 bool going_down = false;
 int before_going_up_encoder_count[4] = {0, 0, 0, 0};
@@ -122,6 +124,7 @@ int current_command = 0;
 int command_waiting = 0;
 bool system_idle = false;
 bool restart_requested = false;
+int stuck_on_reverse_counter = 0;
 
 int disconnection_counter = 0;
 
@@ -177,7 +180,9 @@ void readEncoderCounts() {
     for (int i = 0; i < 4; i++) {
         int16_t val;
         pcnt_get_counter_value((pcnt_unit_t)i, &val);
-        encoderCount[i] = pcnt_offset[i] + (int32_t)val;
+        int32_t new_encoder_count = pcnt_offset[i] + (int32_t)val;
+        average_encoder_change[i] = encoder_change_filter * average_encoder_change[i] + (1 - encoder_change_filter) * abs(new_encoder_count - encoderCount[i]);
+        encoderCount[i] = new_encoder_count;
     }
 }
 
@@ -742,8 +747,22 @@ void pidControlTask(void *parameter) {
         xSemaphoreGive(commandMutex);
 
         xSemaphoreTake(idleMutex, portMAX_DELAY);
-        system_idle = homed && (( going_down && is_idle() ) || (!going_down && is_idle(7000)));
-        xSemaphoreGive(idleMutex);
+        system_idle = !command_waiting && homed && (( going_down && is_idle() ) || (!going_down && is_idle(7000)));
+        
+        if (average_encoder_change[0] < 10 && average_encoder_change[1] < 10 && average_encoder_change[2] < 10 && average_encoder_change[3] < 10){
+            stuck_on_reverse_counter++;
+        }else{
+            stuck_on_reverse_counter = 0;
+        }
+
+        if (stuck_on_reverse_counter > 1000 && !command_waiting && !system_idle){
+            system_idle = false;
+            xSemaphoreGive(idleMutex);
+            find_home(1);
+            command_waiting = 1;
+        }else{
+            xSemaphoreGive(idleMutex);
+        }
 
         if (homing_waiting){
             homing_waiting = 0;
