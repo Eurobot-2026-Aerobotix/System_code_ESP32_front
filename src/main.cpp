@@ -112,7 +112,7 @@ unsigned long motor_homing_time[4] = {0, 0, 0, 0};
 int saved_encoder_count[4] = {0, 0, 0, 0};
 int first_saved_encoder_count[4] = {0, 0, 0, 0};
 int average_encoder_change[4] = {0, 0, 0, 0};
-int encoder_change_filter = 0.99;
+int encoder_change_filter = 0.9;
 
 bool going_down = false;
 int before_going_up_encoder_count[4] = {0, 0, 0, 0};
@@ -743,6 +743,7 @@ void pidControlTask(void *parameter) {
         if (command_waiting) {
             process_command(current_command);
             command_waiting = 0;
+            stuck_on_reverse_counter = 0;
         }
         xSemaphoreGive(commandMutex);
 
@@ -755,7 +756,7 @@ void pidControlTask(void *parameter) {
             stuck_on_reverse_counter = 0;
         }
 
-        if (stuck_on_reverse_counter > 1000 && !command_waiting && !system_idle){
+        if (stuck_on_reverse_counter > 100 && !command_waiting && !system_idle){
             system_idle = false;
             xSemaphoreGive(idleMutex);
             find_home(1);
