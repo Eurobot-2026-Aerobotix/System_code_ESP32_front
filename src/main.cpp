@@ -130,6 +130,13 @@ unsigned long reverse_recovery_cooldown_until = 0;
 
 int disconnection_counter = 0;
 
+// micro-ROS agent connection tuning (serial transport is sensitive to short jitter)
+const uint32_t AGENT_PING_TIMEOUT_MS = 400;
+const uint8_t AGENT_PING_ATTEMPTS = 2;
+const uint8_t AGENT_MAX_CONSECUTIVE_PING_FAILS = 3;
+const uint32_t AGENT_PING_INTERVAL_MS = 1000;
+const uint32_t AGENT_RECONNECT_DELAY_MS = 100;
+
 // Initialise PCNT units for X4 quadrature decoding on all 4 encoders.
 // Direction convention is identical to the former ISRs:
 //   encoderA_ISR: count += (A == B) ? +1 : -1   =>  CH0: hctrl=KEEP lctrl=REVERSE pos=INC neg=DEC
@@ -506,7 +513,7 @@ void test_with_serial(){
 // ============================================================================
 bool pingAgent() {
     // Ping the agent to check if it's still alive
-    rcl_ret_t ping_result = rmw_uros_ping_agent(200, 1); // 200ms timeout, 1 attempt
+    rcl_ret_t ping_result = rmw_uros_ping_agent(AGENT_PING_TIMEOUT_MS, AGENT_PING_ATTEMPTS);
     return ping_result == RCL_RET_OK;
 }
 
@@ -663,9 +670,8 @@ bool initializeMicroROS() {
 void microROSTask(void *parameter) {
     unsigned long last_ping_time = 0;
     unsigned long last_status_time = 0;
-    const unsigned long PING_INTERVAL = 500; // Ping every 0.5 second
     const unsigned long STATUS_INTERVAL = 1000; // Publish status every 1 second
-    const unsigned long RECONNECT_DELAY = 500; // Wait 0.5 second before reconnect
+    uint8_t consecutive_ping_failures = 0;
     
     agent_status = AGENT_WAIT;
     
@@ -673,14 +679,13 @@ void microROSTask(void *parameter) {
         switch (agent_status) {
             case AGENT_WAIT:
             case AGENT_DISCONNECTED:
-                disconnection_counter++;
                 agent_status = AGENT_WAIT;
                 
                 // Check if agent is available
                 if (pingAgent()) {
                     agent_status = AGENT_AVAILABLE;
                 } else {
-                    vTaskDelay(pdMS_TO_TICKS(RECONNECT_DELAY));
+                    vTaskDelay(pdMS_TO_TICKS(AGENT_RECONNECT_DELAY_MS));
                 }
                 break;
                 
@@ -689,9 +694,11 @@ void microROSTask(void *parameter) {
                 if (initializeMicroROS()) {
                     agent_status = AGENT_CONNECTED;
                     last_ping_time = millis();
+                    last_status_time = millis();
+                    consecutive_ping_failures = 0;
                 } else {
                     agent_status = AGENT_WAIT;
-                    vTaskDelay(pdMS_TO_TICKS(RECONNECT_DELAY));
+                    vTaskDelay(pdMS_TO_TICKS(AGENT_RECONNECT_DELAY_MS));
                 }
                 break;
                 
@@ -713,10 +720,17 @@ void microROSTask(void *parameter) {
                 }
                 
                 // Periodic ping to check agent health
-                if (millis() - last_ping_time > PING_INTERVAL) {
+                if (millis() - last_ping_time > AGENT_PING_INTERVAL_MS) {
                     if (!pingAgent()) {
-                        cleanupMicroROS();
-                        agent_status = AGENT_DISCONNECTED;
+                        consecutive_ping_failures++;
+                        if (consecutive_ping_failures >= AGENT_MAX_CONSECUTIVE_PING_FAILS) {
+                            cleanupMicroROS();
+                            agent_status = AGENT_DISCONNECTED;
+                            disconnection_counter++;
+                            consecutive_ping_failures = 0;
+                        }
+                    } else {
+                        consecutive_ping_failures = 0;
                     }
                     last_ping_time = millis();
                 }
