@@ -125,6 +125,8 @@ int command_waiting = 0;
 bool system_idle = false;
 bool restart_requested = false;
 int stuck_on_reverse_counter = 0;
+bool reverse_recovery_latched = false;
+unsigned long reverse_recovery_cooldown_until = 0;
 
 int disconnection_counter = 0;
 
@@ -744,6 +746,7 @@ void pidControlTask(void *parameter) {
             process_command(current_command);
             command_waiting = 0;
             stuck_on_reverse_counter = 0;
+            reverse_recovery_latched = false;
         }
         xSemaphoreGive(commandMutex);
 
@@ -754,13 +757,21 @@ void pidControlTask(void *parameter) {
             stuck_on_reverse_counter++;
         }else{
             stuck_on_reverse_counter = 0;
+            reverse_recovery_latched = false;
         }
 
-        if (stuck_on_reverse_counter > 100 && !command_waiting && !system_idle){
+        if (millis() >= reverse_recovery_cooldown_until &&
+            stuck_on_reverse_counter > 100 && !command_waiting && !system_idle &&
+            !reverse_recovery_latched){
             system_idle = false;
             xSemaphoreGive(idleMutex);
             find_home(1);
+            xSemaphoreTake(commandMutex, portMAX_DELAY);
             command_waiting = 1;
+            xSemaphoreGive(commandMutex);
+            stuck_on_reverse_counter = 0;
+            reverse_recovery_latched = true;
+            reverse_recovery_cooldown_until = millis() + 3000;
         }else{
             xSemaphoreGive(idleMutex);
         }
