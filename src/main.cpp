@@ -6,6 +6,7 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <std_msgs/msg/int32.h>
+#include <std_msgs/msg/int64.h>
 #include <std_msgs/msg/string.h>
 #include <std_srvs/srv/trigger.h>
 #include <freertos/FreeRTOS.h>
@@ -80,7 +81,7 @@ rcl_node_t node;
 std_msgs__msg__Int32 n20_msg;
 std_msgs__msg__Int32 kabech_msg;
 std_msgs__msg__Int32 dawer_msg;
-std_msgs__msg__Int32 status_msg;
+std_msgs__msg__Int64 status_msg;
 std_srvs__srv__Trigger_Request idle_req;
 std_srvs__srv__Trigger_Response idle_res;
 
@@ -606,7 +607,7 @@ bool initializeMicroROS() {
     ret = rclc_publisher_init(
         &status_publisher,
         &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int64),
         "/front/status",
         &pub_opts.qos);
     if (ret != RCL_RET_OK) {
@@ -715,6 +716,7 @@ void microROSTask(void *parameter) {
                 // Publish status every 1 second
                 if (millis() - last_status_time > STATUS_INTERVAL) {
                     status_msg.data = disconnection_counter;
+                    status_msg.data = (encoderCount[0]/10)*1000000000+(encoderCount[1]/10)*1000000+(encoderCount[2]/10)*1000+(encoderCount[3]/10);
                     rcl_publish(&status_publisher, &status_msg, NULL);
                     last_status_time = millis();
                 }
@@ -825,6 +827,7 @@ void microros_setup(){
 }
 
 void setup(){
+    setupServos();
     Serial.begin(115200);
 
     commandMutex = xSemaphoreCreateMutex();
@@ -843,7 +846,6 @@ void setup(){
     setupPCNT();
 
     delay(2000);
-    setupServos();
 
     microros_setup();
     find_home();
