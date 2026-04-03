@@ -106,7 +106,7 @@ int pwm_output[4] = {0, 0, 0, 0};
 
 long upPosition[4] = {0, 0, 0, 0};
 long midPosition[4] = {2250, 2100, 2000, 2080};
-long preparePosition[4] = {7250, 6900, 7100, 6700};
+long preparePosition[4] = {6450, 6000, 6250, 6100};
 long downPosition[4] = {8500, 8100, 8500, 8200};
 bool motor_homing[4] = {false, false, false, false};
 unsigned long motor_homing_time[4] = {0, 0, 0, 0};
@@ -814,7 +814,7 @@ void pidControlTask(void *parameter) {
                 applyPositionPID(dt, i);
             }
         }
-         //test_with_serial();
+        // test_with_serial();
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
