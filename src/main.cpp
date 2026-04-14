@@ -57,9 +57,11 @@ int middle_servo_pos_1 = 152;
 
 int left_servo_pos_0 = 14;
 int left_servo_pos_1 = 146;
+int left_servo_pos_2 = 106;
 
 int right_servo_pos_0 = 155;
 int right_servo_pos_1 = 19;
+int right_servo_pos_2 = 59;
 
 int minPWM[4] = {80, 80, 80, 80};
 
@@ -305,6 +307,10 @@ void khabbi_l_kabecha(){
     left_servo.write(left_servo_pos_0);
     right_servo.write(right_servo_pos_0);
 }
+void bala(){
+    left_servo.write(left_servo_pos_2);
+    right_servo.write(right_servo_pos_2);
+}
 void apply_command(String command){
     for(int i=0; i<4; i++){
         motor_homing[i] = false;
@@ -411,8 +417,10 @@ void kabech_callback(const void *msgin) {
     int value = msg->data;
     if (value == 1){
         estwi_l_crates();
-    }else{
+    }else if (value == 0){
         khabbi_l_kabecha();
+    }else{
+        bala();
     }
 }
 
@@ -477,6 +485,8 @@ void test_with_serial(){
             ba33ed_3la_ba3dhou();
         }else if (command[0] == 's'){
             lemm_l_ba3dhou();
+        }else if (command[0] == 'a'){
+            bala();
         }else if (command[0] == 'c') {
             // format: c<servo_id><angle>
             // example: // example: c130  -> right servo to 90°
