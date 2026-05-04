@@ -779,7 +779,17 @@ void pidControlTask(void *parameter) {
         xSemaphoreTake(idleMutex, portMAX_DELAY);
         system_idle = !command_waiting && homed && (( going_down && is_idle() ) || (!going_down && is_idle(7000)));
         
-        if (average_encoder_change[0] < 10 && average_encoder_change[1] < 10 && average_encoder_change[2] < 10 && average_encoder_change[3] < 10){
+        if (
+            (average_encoder_change[0] < 10 && average_encoder_change[1] < 10 && average_encoder_change[2] < 10 && average_encoder_change[3] < 10)
+            ||
+            (encoderCount[0] > downPosition[0] + 100)
+            ||
+            (encoderCount[1] > downPosition[1] + 100)
+            ||
+            (encoderCount[2] > downPosition[2] + 100)
+            ||
+            (encoderCount[3] > downPosition[3] + 100)
+            ){
             stuck_on_reverse_counter++;
         }else{
             stuck_on_reverse_counter = 0;
