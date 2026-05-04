@@ -56,12 +56,12 @@ int middle_servo_pos_0 = 40;
 int middle_servo_pos_1 = 152;
 
 int left_servo_pos_0 = 14;
-int left_servo_pos_1 = 146;
-int left_servo_pos_2 = 106;
+int left_servo_pos_1 = 149;
+int left_servo_pos_2 = 118;
 
-int right_servo_pos_0 = 155;
+int right_servo_pos_0 = 156;
 int right_servo_pos_1 = 19;
-int right_servo_pos_2 = 59;
+int right_servo_pos_2 = 50;
 
 int minPWM[4] = {80, 80, 80, 80};
 
@@ -107,9 +107,9 @@ long target_encoder_count[4] = {0, 0, 0, 0};
 int pwm_output[4] = {0, 0, 0, 0};
 
 long upPosition[4] = {0, 0, 0, 0};
-long midPosition[4] = {2250, 2100, 2000, 2080};
-long preparePosition[4] = {6450, 6000, 6250, 6100};
-long downPosition[4] = {8500, 8100, 8500, 8200};
+long midPosition[4] = {2600, 2600, 2400, 2300};
+long preparePosition[4] = {6450, 6300, 6200, 6000};
+long downPosition[4] = {7800, 7600, 7500, 7300};
 bool motor_homing[4] = {false, false, false, false};
 unsigned long motor_homing_time[4] = {0, 0, 0, 0};
 int saved_encoder_count[4] = {0, 0, 0, 0};
@@ -834,7 +834,7 @@ void pidControlTask(void *parameter) {
                 applyPositionPID(dt, i);
             }
         }
-        // test_with_serial();
+        //  test_with_serial();
         // Delay until next cycle
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
