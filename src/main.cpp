@@ -107,8 +107,8 @@ long target_encoder_count[4] = {0, 0, 0, 0};
 int pwm_output[4] = {0, 0, 0, 0};
 
 long upPosition[4] = {0, 0, 0, 0};
-long midPosition[4] = {2600, 2600, 2400, 2300};
-long preparePosition[4] = {6450, 6300, 6200, 6000};
+long midPosition[4] = {2600, 2400, 2500, 2300};
+long preparePosition[4] = {6450, 6000, 6300, 6000};
 long downPosition[4] = {7800, 7600, 7500, 7300};
 bool motor_homing[4] = {false, false, false, false};
 unsigned long motor_homing_time[4] = {0, 0, 0, 0};
